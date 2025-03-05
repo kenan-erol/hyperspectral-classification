@@ -9,19 +9,20 @@ function alignment_check(directory_path)
         error('Directory does not exist: %s', directory_path);
     end
     
-    % Change to the specified directory
-    cd(directory_path);
+    % Create full file paths
+    hdr_file = fullfile(directory_path, 'measurement.hdr');
+    raw_file = fullfile(directory_path, 'measurement.raw');
     
     % Check if required files exist
-    if ~exist('measurement.hdr', 'file') || ~exist('measurement.raw', 'file')
+    if ~exist(hdr_file, 'file') || ~exist(raw_file, 'file')
         error('measurement.hdr or measurement.raw not found in directory: %s', directory_path);
     end
     
     % Read the data
-    info = enviinfo('measurement.hdr');
+    info = enviinfo(hdr_file);
     hcube = hypercube(info.Filename);
     
-    data = multibandread('measurement.raw', [info.Height, info.Width, info.Bands],...
+    data = multibandread(raw_file, [info.Height, info.Width, info.Bands],...
         info.DataType, info.HeaderOffset, info.Interleave, info.ByteOrder);
     
     % Display the viewer
