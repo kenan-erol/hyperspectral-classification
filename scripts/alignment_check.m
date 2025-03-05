@@ -1,3 +1,10 @@
+% helpful links I have used:
+% https://www.mathworks.com/help/images/ref/enviinfo.html?s_tid=doc_ta
+% https://www.mathworks.com/help/images/hyperspectral-image-processing.html
+% https://www.mathworks.com/matlabcentral/answers/853385-reading-a-raw-file-from-a-hyperspectral-camera-using-envi-information
+% https://www.mathworks.com/matlabcentral/answers/1807290-hyperspectral-imaging-signature-plot
+% https://www.mathworks.com/help/images/ref/hyperspectralviewer-app.html
+
 function alignment_check(directory_path)
     % Input validation
     if nargin < 1
