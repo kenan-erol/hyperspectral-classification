@@ -5,29 +5,38 @@ import re
 from collections import defaultdict
 
 def extract_drug_name(path):
-    """Extract drug name from folder path"""
+    """Extract drug name from folder path and standardize similar drug names"""
     # Try to get the first part of the path that contains a drug name
     path_parts = os.path.normpath(path).split(os.sep)
     
-    # Look for common drug names in the path
-    drug_names = [
-        'Zopiklon', 'zopiklon',
-        'Tramadol', 'tramadol', 'Tradolan',
-        'Ecstasy', 'ecstasy',
-        'Klonazepam', 'klonazepam', 'Clonazepam', 'clonazepam',
-        'Oxycodone', 'oxycodone', 'oxykodon', 'Oxykodon',
-        'Bromazolam', 'bromazolam'
-    ]
+    # Define standardized name mappings for similar drug variations
+    # Format: 'standardized_name': ['variation1', 'variation2', ...]
+    drug_name_mapping = {
+        'zopiklon': ['Zopiklon', 'zopiklon'],
+        'tramadol': ['Tramadol', 'tramadol', 'Tradolan', 'tradolan'],
+        'ecstasy': ['Ecstasy', 'ecstasy'],
+        'clonazepam': ['Klonazepam', 'klonazepam', 'Clonazepam', 'clonazepam'],
+        'oxycodone': ['Oxycodone', 'oxycodone', 'oxykodon', 'Oxykodon', 'OxyContin', 'oxycontin'],
+        'bromazolam': ['Bromazolam', 'bromazolam']
+    }
+    
+    # Create a flat list of all drug name variations for initial matching
+    all_drug_variations = []
+    for variations in drug_name_mapping.values():
+        all_drug_variations.extend(variations)
     
     # Skip empty trays
     if any('empty tray' in part.lower() for part in path_parts):
         return None
     
-    # First check each path part for an exact match with known drug names
+    # First check each path part for an exact match with any drug variation
     for part in path_parts:
-        for drug in drug_names:
-            if drug in part:
-                return drug.lower()
+        for drug_variation in all_drug_variations:
+            if drug_variation in part:
+                # Map to standardized name
+                for standard_name, variations in drug_name_mapping.items():
+                    if drug_variation in variations:
+                        return standard_name
     
     # If no exact match, try to extract drug name from the first part that contains a date pattern
     date_pattern = re.compile(r'.*(\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{4})')
@@ -38,11 +47,25 @@ def extract_drug_name(path):
             drug_part = part.split(match.group(1))[0].strip()
             # Skip if this is an empty string or likely not a drug name
             if drug_part and not any(x in drug_part.lower() for x in ['empty', 'tray']):
-                return drug_part.lower()
+                # Try to match the extracted drug part with known variations
+                drug_part_lower = drug_part.lower()
+                for standard_name, variations in drug_name_mapping.items():
+                    for variation in variations:
+                        if variation.lower() in drug_part_lower:
+                            return standard_name
+                # If no match to known variations, return as is
+                return drug_part_lower
     
     # If all else fails, use the parent directory name if it's not "empty tray"
     if len(path_parts) > 1 and not 'empty' in path_parts[-2].lower():
-        return path_parts[-2].lower()
+        parent_dir = path_parts[-2].lower()
+        # Try to match parent directory with known variations
+        for standard_name, variations in drug_name_mapping.items():
+            for variation in variations:
+                if variation.lower() in parent_dir:
+                    return standard_name
+        # If no match to known variations, return as is
+        return parent_dir
     
     return None
 
