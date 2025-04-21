@@ -117,3 +117,39 @@ Model: ResNet-18 (adapted for 256 channels)
 Patch Size: 224x224
 Test Accuracy: XX.XX%
 ```
+
+
+Notes:
+
+3. Regarding the question about SAM segmentation and variable pill counts
+Regarding your question about extracting data from HSI cubes with different numbers of pills (6 vs 100):
+
+You're right to be concerned, but the current implementation handles this gracefully. Let's look at how:
+
+The num_patches_per_image parameter (which you would set to 100) controls how many times each hyperspectral image appears in the dataset, not how many pills it will extract from a single image.
+
+For each appearance of an image in the dataset, the code:
+
+Loads the full hyperspectral cube
+Uses SAM2 to detect all pills in that image
+Randomly selects ONE pill from the detected pills
+Creates a patch around that one pill
+For images with only 6 pills:
+
+SAM2 will only detect those 6 pills
+When randomly selecting from these 6 pills multiple times (up to 100 times), you'll get repeats
+This means you'll end up sampling the same 6 pills multiple times
+For images with 100 pills:
+
+SAM2 will detect many more pills
+The random selection will have more variety
+This approach naturally balances your dataset - cubes with more pills contribute more unique data points, while cubes with fewer pills contribute fewer unique points but still appear the same number of times in your training iterations.
+
+To run these scripts:
+
+First, install the required dependency for processing ENVI files:
+Run the conversion script:
+Generate the labels file:
+After this, you can run your training script as normal, but consider using a higher num_patches_per_image (like 100) to ensure you get good coverage of all pills:
+.
+The scripts are designed to maintain the directory structure and properly identify drug classes from your data folder structure.
