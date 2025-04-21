@@ -2,9 +2,10 @@ import os, argparse
 import torch
 import numpy as np
 import random
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
 import torch.nn.functional as F
+from sklearn.model_selection import train_test_split
 
 from classification_model import ClassificationModel
 from classification_cnn import train
@@ -17,15 +18,15 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--n_batch',
     type=int, required=True, help='Number of samples per batch')
 parser.add_argument('--data_dir',
-    type=str, required=True, help='Directory containing hyperspectral data')
+    type=str, required=True, help='Directory containing hyperspectral data subfolders')
 parser.add_argument('--label_file',
-    type=str, required=True, help='File containing image paths and labels')
+    type=str, required=True, help='File containing relative image paths and labels')
 parser.add_argument('--num_patches_per_image',
     type=int, default=5, help='Number of patches to sample per image')
 parser.add_argument('--patch_size',
     type=int, default=224, help='Size of image patches')
 parser.add_argument('--train_split_ratio',
-    type=float, default=0.8, help='Proportion of data to use for training')
+    type=float, default=0.8, help='Proportion of unique images (pills) to use for training')
 
 # Network settings
 parser.add_argument('--encoder_type',
@@ -55,31 +56,24 @@ args = parser.parse_args()
 
 
 class HyperspectralPatchDataset(Dataset):
-    def __init__(self, data_dir, label_file, num_patches_per_image=5, transform=None, target_size=(224, 224)):
+    def __init__(self, data_dir, samples_list, num_patches_per_image=5, transform=None, target_size=(224, 224)):
         self.data_dir = data_dir
         self.transform = transform
         self.target_size = target_size
-        self.samples = []
+        self.num_patches_per_image = num_patches_per_image
         self.sam2 = SAM2()  # Initialize SAM2
 
-        # Load original image paths and labels
-        original_samples = []
-        with open(label_file, 'r') as f:
-            for line in f:
-                image_path, label = line.strip().split()
-                full_path = os.path.join(data_dir, image_path)
-                if os.path.exists(full_path):
-                    original_samples.append((full_path, int(label)))
-                else:
-                    print(f"Warning: Image file not found {full_path}")
+        # Store the original image paths and labels provided
+        self.original_samples = samples_list
 
-        # Create multiple entries for each image to sample patches
-        for image_path, label in original_samples:
-            for _ in range(num_patches_per_image):
-                self.samples.append((image_path, label))
+        # Create multiple entries for patch sampling
+        self.samples_for_iteration = []
+        for image_path, label in self.original_samples:
+            for _ in range(self.num_patches_per_image):
+                self.samples_for_iteration.append((image_path, label))
 
     def __len__(self):
-        return len(self.samples)
+        return len(self.samples_for_iteration)
 
     def _adjust_bbox(self, bbox, img_shape):
         """Make bbox square, enlarge slightly, and clip to image bounds."""
@@ -108,135 +102,134 @@ class HyperspectralPatchDataset(Dataset):
         return new_x, new_y, new_w, new_h
 
     def __getitem__(self, idx):
-        image_path, label = self.samples[idx]
+        original_image_path, label = self.samples_for_iteration[idx]
+        full_path = os.path.join(self.data_dir, original_image_path)
 
         try:
-            # Load the hyperspectral image (H, W, C) or (C, H, W)
-            # Assuming np.load results in (H, W, C) for consistency
-            image = np.load(image_path)  # Shape: (H, W, C) or similar
-            if image.ndim == 2:  # Handle grayscale case if necessary
+            image = np.load(full_path)
+            if image.ndim == 2:
                 image = np.expand_dims(image, axis=-1)
 
             img_h, img_w = image.shape[:2]
 
-            # Generate masks using SAM2 (returns list of bounding boxes [x, y, w, h])
-            masks_bboxes = self.sam2.generate_masks(image)  # Adapt based on actual SAM2 output
+            masks_bboxes = self.sam2.generate_masks(image)
 
             if not masks_bboxes:
-                # Handle case with no masks: use random crop as fallback
-                print(f"Warning: No masks found for {image_path}. Using random crop.")
+                print(f"Warning: No masks found for {full_path}. Using random crop.")
                 rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
                 rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y), 
+                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
                               rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
             else:
-                # Select one random bounding box
                 selected_bbox = random.choice(masks_bboxes)
-
-                # Adjust bounding box (square, enlarge, clip)
                 adj_x, adj_y, adj_w, adj_h = self._adjust_bbox(selected_bbox, image.shape)
-
-                # Crop the patch
                 patch = image[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :]
 
-            # Ensure patch is not empty after adjustments/cropping
             if patch.size == 0:
-                print(f"Warning: Empty patch generated for {image_path}. Using random crop.")
+                print(f"Warning: Empty patch generated for {full_path}. Using random crop.")
                 rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
                 rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y), 
+                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
                               rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
 
-            # Apply transformations (including resize)
             if self.transform:
                 patch_tensor = self.transform(patch)
             else:
-                # Basic conversion if no transform provided
-                patch_tensor = torch.from_numpy(patch.transpose((2, 0, 1))).float()  # C, H, W
+                patch_tensor = torch.from_numpy(patch.transpose((2, 0, 1))).float()
 
-            # Ensure patch is resized to target size
             if patch_tensor.shape[1:] != self.target_size:
                 patch_tensor = F.interpolate(
-                    patch_tensor.unsqueeze(0), 
-                    size=self.target_size, 
-                    mode='bilinear', 
+                    patch_tensor.unsqueeze(0),
+                    size=self.target_size,
+                    mode='bilinear',
                     align_corners=False
                 ).squeeze(0)
 
             return patch_tensor, label
 
         except Exception as e:
-            print(f"Error processing {image_path} at index {idx}: {e}")
-            # Return a dummy item that will be filtered out by the collate function
+            print(f"Error processing {full_path} at index {idx}: {e}")
             return None
 
 
 def collate_fn_skip_none(batch):
-    """Collate function that filters out None items."""
     batch = list(filter(lambda x: x is not None, batch))
     if not batch:
-        return torch.tensor([]), torch.tensor([])  # Handle empty batch case
+        return torch.tensor([]), torch.tensor([])
     return torch.utils.data.dataloader.default_collate(batch)
 
 
 if __name__ == '__main__':
-    # Create output directories
     os.makedirs(args.checkpoint_path, exist_ok=True)
 
-    # --- Transformations ---
     transform = transforms.Compose([
-        transforms.ToTensor(),  # Converts (H, W, C) to (C, H, W) and scales to [0, 1]
-        # Add data augmentation transforms if needed
+        transforms.ToTensor(),
     ])
 
-    # --- Dataset and Splitting ---
-    print("Loading dataset...")
-    full_dataset = HyperspectralPatchDataset(
+    print("Loading image list and labels...")
+    all_samples = []
+    class_labels = set()
+    try:
+        with open(args.label_file, 'r') as f:
+            for line in f:
+                relative_path, label_str = line.strip().split()
+                label = int(label_str)
+                full_path_check = os.path.join(args.data_dir, relative_path)
+                if os.path.exists(full_path_check):
+                    all_samples.append((relative_path, label))
+                    class_labels.add(label)
+                else:
+                    print(f"Warning: Image file not found {full_path_check}, skipping.")
+    except FileNotFoundError:
+        print(f"Error: Label file not found at {args.label_file}")
+        exit(1)
+    except Exception as e:
+        print(f"Error reading label file {args.label_file}: {e}")
+        exit(1)
+
+    if not all_samples:
+        raise ValueError("No valid samples found. Check label file and data directory.")
+
+    num_classes = len(class_labels)
+    print(f"Found {len(all_samples)} unique images belonging to {num_classes} classes.")
+
+    image_paths = [s[0] for s in all_samples]
+    labels = [s[1] for s in all_samples]
+
+    train_paths, _, train_labels, _ = train_test_split(
+        image_paths, labels,
+        train_size=args.train_split_ratio,
+        random_state=42,
+        stratify=labels
+    )
+
+    train_samples = list(zip(train_paths, train_labels))
+
+    print(f"Splitting dataset: Train={len(train_samples)} unique images")
+
+    print("Creating training dataset instance...")
+    train_dataset = HyperspectralPatchDataset(
         args.data_dir,
-        args.label_file,
+        train_samples,
         num_patches_per_image=args.num_patches_per_image,
         transform=transform,
         target_size=(args.patch_size, args.patch_size)
     )
-    print(f"Full dataset size: {len(full_dataset)} patches")
+    print(f"Training dataset size: {len(train_dataset)} patches")
 
-    if not full_dataset.samples:
-        raise ValueError("Dataset is empty. Check data paths and loading logic.")
-
-    # Split dataset into training and testing sets
-    total_size = len(full_dataset)
-    train_size = int(total_size * args.train_split_ratio)
-    test_size = total_size - train_size
-
-    print(f"Splitting dataset: Train={train_size}, Test={test_size}")
-    # Ensure sizes are valid before splitting
-    if train_size <= 0 or test_size <= 0:
-        raise ValueError(f"Invalid train/test split sizes: Train={train_size}, Test={test_size}. Need more data.")
-
-    train_dataset, _ = random_split(full_dataset, [train_size, test_size])
-
-    # --- DataLoader ---
     print("Creating DataLoader...")
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=args.n_batch,
         shuffle=True,
         collate_fn=collate_fn_skip_none,
-        num_workers=4,  # Adjust based on system capabilities
-        pin_memory=True if args.device == 'cuda' else False
+        num_workers=4,
+        pin_memory=True if args.device == 'cuda' else False,
+        drop_last=True
     )
     print("DataLoader created.")
 
-    # --- Model ---
-    print(f"Initializing model with {args.num_channels} input channels on {args.device}...")
-    
-    # Get number of classes from dataset
-    class_labels = set()
-    for _, label in full_dataset.samples:
-        class_labels.add(label)
-    num_classes = len(class_labels)
-    
-    # Initialize model
+    print(f"Initializing model with {args.num_channels} input channels and {num_classes} classes on {args.device}...")
     model = ClassificationModel(
         encoder_type=args.encoder_type,
         input_channels=args.num_channels,
@@ -246,10 +239,8 @@ if __name__ == '__main__':
     model.to(args.device)
     print("Model initialized.")
 
-    # --- Optimizer ---
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
-    # --- Train ---
     print("Starting training...")
     train(
         model=model,

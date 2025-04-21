@@ -5,71 +5,108 @@ This project focuses on using hyperspectral imaging and deep learning techniques
 ## Project Goal
 
 The primary objective is to develop and train a classification model capable of accurately identifying drug types from hyperspectral images. This involves:
-1.  Processing hyperspectral data cubes.
-2.  Segmenting individual pills within the images, potentially using methods like the Segment Anything Model (SAM).
-3.  Extracting representative patches from segmented pills.
-4.  Training deep learning models (e.g., adapted ResNet, VGG) on these patches.
-5.  Evaluating the model's performance in classifying different drug types.
+1.  Organizing hyperspectral data and creating a label map.
+2.  Processing hyperspectral data cubes.
+3.  Segmenting individual pills within the images, potentially using methods like the Segment Anything Model (SAM).
+4.  Extracting representative patches from segmented pills.
+5.  Splitting data into training and testing sets based on *unique pills*, not patches, to avoid data leakage.
+6.  Training deep learning models (e.g., adapted ResNet, VGG) on these patches.
+7.  Evaluating the model's performance in classifying different drug types on the held-out test set.
 
 ## Learning Objectives
 
-- Understand the basics of hyperspectral image data (.raw, .hdr files).
+- Understand the basics of hyperspectral image data (.raw, .hdr files, potentially preprocessed .npy).
 - Implement data loading and preprocessing pipelines for hyperspectral images.
 - Integrate image segmentation techniques (e.g., SAM2) to isolate objects of interest (pills).
 - Develop strategies for sampling patches from segmented objects.
+- Implement correct train/test splitting at the image/pill level.
 - Adapt standard CNN architectures (like ResNet, VGG) for high-dimensional hyperspectral inputs.
 - Implement training and evaluation loops for hyperspectral classification.
 - Utilize appropriate loss functions and evaluation metrics for multi-class classification.
 - Manage experiments using configuration files and command-line arguments.
 - Implement checkpointing and logging (e.g., TensorBoard) for monitoring training progress.
 
+## Data Organization Strategy
+
+The raw data might be organized in nested directories, for example: `./data/<drug_name_date>/Group/M<id>/<filename>.raw/.hdr`. To use this data effectively and consistently across different experiments or data drops:
+
+1.  **Analyze Structure (Optional):** Before preprocessing, understand the directory layout. You can use the `tree` command (install if necessary: `sudo apt install tree` on Debian/Ubuntu, `brew install tree` on macOS) to save the structure to a file:
+    ```bash
+    # Run from the project root directory
+    tree ./data > data_structure.txt
+    ```
+    Examine `data_structure.txt` to see how files are organized.
+2.  **Preprocessing (Optional but Recommended):** Convert the raw hyperspectral data (e.g., ENVI `.raw`/`.hdr` pairs) into a more standard format like NumPy arrays (`.npy`). This simplifies loading. Store these `.npy` files, perhaps mirroring the original structure or flattening it slightly.
+3.  **Create `labels.txt`:** Generate a single text file (e.g., `./data/labels.txt`) that acts as a manifest for your dataset. Each line should contain:
+    `<relative_path_to_image.npy> <integer_label>`
+    -   `<relative_path_to_image.npy>`: The path to an individual pill's hyperspectral data file, relative to the main data directory (e.g., `drop-4/Zopiklon 2025-01-14/Group/M0003/measurement.npy`).
+    -   `<integer_label>`: A unique integer representing the drug class (e.g., 0 for Zopiklon, 1 for Aspirin, etc.).
+4.  **Scripting:** Create a helper script (e.g., `prepare_data.py`, not provided here) to automate steps 2 and 3. This script would:
+    -   Walk through the raw data directories (using the structure identified in step 1).
+    -   Identify drug names (e.g., from folder names) and assign integer labels.
+    -   Load/convert raw data to `.npy`.
+    -   Write the relative paths and labels to `labels.txt`.
+5.  **Usage:** The training (`train_classification_hyper.py`) and evaluation (`run_classification_hyper.py`) scripts will then use the `--data_dir` argument pointing to the base directory (e.g., `./data/`) and the `--label_file` argument pointing to the generated `labels.txt`.
+
+This approach decouples the data structure details from the training/evaluation logic and ensures all relevant data is captured.
+
 ## Key Files Involved
 
 ```
 src/train_classification_hyper.py # Main training script for hyperspectral data
+src/run_classification_hyper.py   # Evaluation script for hyperspectral data
 src/classification_model.py     # Defines the overall classification model structure
 src/networks.py                 # Contains encoder architectures (ResNet, VGG)
-src/classification_cnn.py       # Contains generic train/evaluate functions (may need adaptation)
+src/classification_cnn.py       # Contains generic train/evaluate functions
 src/net_utils.py                # Utility functions/blocks for networks
-# Potentially add scripts related to SAM2 integration or specific data loading utilities
+src/sam2.py                     # Placeholder for SAM2 integration logic
 bash/train_classification_hyper_resnet.sh # Example script to run training
 bash/train_classification_hyper_vgg.sh   # Example script to run training
-# Add evaluation scripts if created (e.g., run_classification_hyper.py)
+# Potentially add prepare_data.py for data organization
 ```
+
+## Understanding `train_classification_hyper.py` Arguments
+
+Compared to a standard image classification script (like `train_classification_cnn.py` which might use built-in datasets like CIFAR10), `train_classification_hyper.py` requires more specific arguments due to the nature of the data:
+
+-   `--data_dir`, `--label_file`: Needed because we are loading custom data from a specific structure, not a standard `torchvision` dataset.
+-   `--num_patches_per_image`, `--patch_size`: Define the strategy for extracting smaller, fixed-size inputs for the CNN from potentially larger, variable-sized segmented pills.
+-   `--train_split_ratio`: Explicitly controls the split between training and testing data based on unique pills.
+-   `--num_channels`: Essential for hyperspectral data, as the number of input channels (spectral bands) is much higher than standard RGB (3) or grayscale (1) and must be specified for the model architecture.
 
 ## Tasks
 
 - **Data Preparation:**
-    - Write functions to load hyperspectral data (e.g., using spectral libraries or custom readers for ENVI format).
-    - Understand and utilize metadata from `.hdr` files (wavelengths, dimensions, etc.).
+    - Implement the data organization strategy described above (preprocessing, `labels.txt` generation).
 - **Segmentation and Patching:**
-    - Integrate SAM2 (or another segmentation method) to generate masks for pills in the hyperspectral images.
-    - Implement logic to extract patches from the masked pill regions. Consider strategies like sampling multiple patches per pill or using the bounding box.
-- **Dataset Creation:**
-    - Create a PyTorch `Dataset` class (`HyperspectralPatchDataset`) to handle loading images, generating/using masks, extracting patches, and applying transformations.
-    - Implement a `DataLoader` with appropriate batching and collation, handling potential errors during data loading (e.g., skipping None samples).
+    - Ensure the `SAM2` class/functions correctly generate masks or bounding boxes for pills.
+    - Verify the patch extraction logic in `HyperspectralPatchDataset` (`_adjust_bbox`, cropping).
+- **Dataset Creation & Splitting:**
+    - Confirm the `HyperspectralPatchDataset` correctly loads data based on the provided sample list.
+    - Verify that `train_test_split` in `train_classification_hyper.py` and `run_classification_hyper.py` correctly splits based on unique images using stratification.
+    - Ensure the `DataLoader` uses the `collate_fn_skip_none` function.
 - **Model Adaptation:**
-    - Modify the `ClassificationModel` and underlying encoder networks (`ResNet18Encoder`, `VGGNet11Encoder`) to accept the correct number of input channels (e.g., 256 based on your data).
-    - Ensure the final classification layer in the decoder outputs the correct number of drug classes.
+    - Double-check that the `ClassificationModel` and encoder networks (`ResNet18Encoder`, `VGGNet11Encoder`) correctly handle the `--num_channels` input.
+    - Ensure the final classification layer outputs `num_classes` logits.
 - **Training:**
-    - Configure the `train_classification_hyper.py` script to use the new dataset and adapted model.
-    - Set up the optimizer (e.g., Adam) and learning rate scheduler.
-    - Implement the training loop, including forward pass, loss calculation (e.g., CrossEntropyLoss), backpropagation, and optimizer steps.
-    - Integrate TensorBoard logging for loss, accuracy, and potentially image samples.
+    - Run the training script (`bash/train_*.sh`) using the prepared `labels.txt`.
+    - Monitor training using TensorBoard via the `--checkpoint_path`.
 - **Evaluation:**
-    - Implement an evaluation loop to assess model performance on a held-out test set.
-    - Calculate relevant metrics (e.g., overall accuracy, per-class accuracy, confusion matrix).
+    - Implement or adapt the `evaluate` function in `classification_cnn.py` if needed (e.g., to calculate/save confusion matrix, per-class metrics).
+    - Run the evaluation script (`run_classification_hyper.py`) pointing to a trained checkpoint.
 - **Experimentation:**
-    - Use the provided bash scripts (or create new ones) to run training experiments with different hyperparameters (learning rate, batch size, epochs, model type).
-    - Document the results obtained.
+    - Use the bash scripts to run experiments with different hyperparameters.
+    - Document results.
 
 ## Reporting Results
 
 *(This section can be filled in after running experiments)*
 
-Report the final classification accuracy achieved on the test set for different model configurations. Include details like:
-- Model Architecture (e.g., ResNet-18, VGG-11)
-- Key Hyperparameters
+Report the final classification accuracy achieved on the **test set** (derived from the `train_split_ratio`) for different model configurations. Include details like:
+- Model Architecture (e.g., ResNet-18, VGG-11 adapted for N channels)
+- Number of Input Channels (`--num_channels`)
+- Patch Size (`--patch_size`)
+- Key Training Hyperparameters (LR, Epochs, Batch Size)
 - Overall Test Accuracy
 - Per-class Accuracy (if relevant)
 - Confusion Matrix (optional but helpful)
@@ -77,5 +114,6 @@ Report the final classification accuracy achieved on the test set for different 
 Example:
 ```
 Model: ResNet-18 (adapted for 256 channels)
+Patch Size: 224x224
 Test Accuracy: XX.XX%
 ```
