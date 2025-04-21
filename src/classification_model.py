@@ -34,7 +34,7 @@ class ClassificationModel(object):
                                                torch.nn.Flatten(), torch.nn.Linear(512, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 1000))
 
         elif encoder_type == 'resnet18':
-            self.encoder = networks.ResNet18Encoder(input_channels=input_channels, n_filters=[64, 128, 256, 512, 512], use_batch_norm=True)
+            self.encoder = networks.ResNet18Encoder(input_channels=input_channels, n_filters=[64, 128, 256, 512, 512], use_batch_norm=True) # this needs to change for 3d
             self.decoder = torch.nn.Sequential(torch.nn.AdaptiveAvgPool2d((1, 1)), torch.nn.Flatten(), torch.nn.Linear(512, 1000)) # paper says 1000 fc but the last layer has 512 so
         else:
             raise ValueError('Unsupported encoder type: {}'.format(encoder_type))

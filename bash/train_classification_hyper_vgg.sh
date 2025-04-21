@@ -4,7 +4,7 @@ export CUDA_VISIBLE_DEVICES=0
 
 python src/train_classification_hyper.py \
 --n_batch 25 \
---data_dir './data/drop-4/' \
+--data_dir './data-processed/' \
 --label_file './data/labels.txt' \
 --num_patches_per_image 5 \
 --patch_size 224 \
