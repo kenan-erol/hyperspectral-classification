@@ -9,7 +9,11 @@ from sklearn.model_selection import train_test_split
 
 from classification_model import ClassificationModel
 from classification_cnn import train
-from sam2 import SAM2  # Import SAM2 for mask generation
+from sam2 import SAM2  # Import our SAM2 wrapper class
+
+from dataset import HyperspectralDataset
+from log_utils import setup_logging, log_metrics
+import logging
 
 # Define command-line arguments
 parser = argparse.ArgumentParser()
@@ -52,16 +56,21 @@ parser.add_argument('--checkpoint_path',
 parser.add_argument('--device',
     type=str, default='cuda', help='Device to use: gpu, cpu')
 
+# Add a new argument for SAM2 checkpoint path
+parser.add_argument('--sam2_checkpoint_path',
+    type=str, default="./sam2/checkpoints/sam2_hiera_base_plus.pt", 
+    help='Path to the SAM2 checkpoint file')
+
 args = parser.parse_args()
 
 
 class HyperspectralPatchDataset(Dataset):
-    def __init__(self, data_dir, samples_list, num_patches_per_image=5, transform=None, target_size=(224, 224)):
+    def __init__(self, data_dir, samples_list, sam2_model, num_patches_per_image=5, transform=None, target_size=(224, 224)):
         self.data_dir = data_dir
         self.transform = transform
         self.target_size = target_size
         self.num_patches_per_image = num_patches_per_image
-        self.sam2 = SAM2()  # Initialize SAM2
+        self.sam2 = sam2_model  # Use the passed SAM2 model
 
         # Store the original image paths and labels provided
         self.original_samples = samples_list
@@ -162,6 +171,18 @@ def collate_fn_skip_none(batch):
 if __name__ == '__main__':
     os.makedirs(args.checkpoint_path, exist_ok=True)
 
+    # Initialize SAM2 model with provided checkpoint path
+    try:
+        sam2_model = SAM2(checkpoint_path=args.sam2_checkpoint_path)
+        print("SAM2 model initialized successfully for pill segmentation")
+    except FileNotFoundError as e:
+        print(f"Error: {e}")
+        print("Please download SAM2 checkpoints using: cd sam2/checkpoints && ./download_ckpts.sh")
+        exit(1)
+    except Exception as e:
+        print(f"Error initializing SAM2: {e}")
+        exit(1)
+
     transform = transforms.Compose([
         transforms.ToTensor(),
     ])
@@ -211,6 +232,7 @@ if __name__ == '__main__':
     train_dataset = HyperspectralPatchDataset(
         args.data_dir,
         train_samples,
+        sam2_model=sam2_model,  # Pass the initialized model
         num_patches_per_image=args.num_patches_per_image,
         transform=transform,
         target_size=(args.patch_size, args.patch_size)

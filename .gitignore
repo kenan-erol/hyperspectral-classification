@@ -2,3 +2,14 @@
 data/
 data_original/
 data_processed/
+sam2/.vscode/
+sam2/.DS_Store
+sam2/__pycache__/
+sam2/*-checkpoint.ipynb
+sam2/.venv
+sam2/*.egg*
+sam2/build/*
+sam2/_C.*
+sam2/outputs/*
+sam2/checkpoints/*.pt
+sam2/demo/backend/checkpoints/*.pt
