@@ -18,6 +18,7 @@ class ClassificationModel(object):
     def __init__(self,
                  encoder_type,
                  input_channels=3,
+                 num_classes=1000,
                  device=torch.device('cuda')):
 
         self.device = device
@@ -31,11 +32,11 @@ class ClassificationModel(object):
         if encoder_type == 'vggnet11':
             self.encoder = networks.VGGNet11Encoder(input_channels=input_channels, n_filters=[64, 128, 256, 512, 512])
             self.decoder = torch.nn.Sequential(
-                                               torch.nn.Flatten(), torch.nn.Linear(512, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 1000))
+                                               torch.nn.Flatten(), torch.nn.Linear(512, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, num_classes))
 
         elif encoder_type == 'resnet18':
             self.encoder = networks.ResNet18Encoder(input_channels=input_channels, n_filters=[64, 128, 256, 512, 512], use_batch_norm=True) # this needs to change for 3d
-            self.decoder = torch.nn.Sequential(torch.nn.AdaptiveAvgPool2d((1, 1)), torch.nn.Flatten(), torch.nn.Linear(512, 1000)) # paper says 1000 fc but the last layer has 512 so
+            self.decoder = torch.nn.Sequential(torch.nn.AdaptiveAvgPool2d((1, 1)), torch.nn.Flatten(), torch.nn.Linear(512, num_classes)) # paper says 1000 fc but the last layer has 512 so
         else:
             raise ValueError('Unsupported encoder type: {}'.format(encoder_type))
 
