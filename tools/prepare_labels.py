@@ -95,8 +95,20 @@ def create_labels_file(data_dir, output_file="data/labels.txt"):
     - Skips empty trays
     - Only includes measurement.npy files
     """
-    # Create directory for output file if it doesn't exist
-    os.makedirs(os.path.dirname(output_file), exist_ok=True)
+    # Ensure the directory for the output file exists.
+    # If the directory specified in output_file does not exist,
+    # the script will raise an error when trying to write the file.
+    output_dir = os.path.dirname(output_file)
+    if output_dir and not os.path.exists(output_dir):
+        # Optionally, raise an error or print a warning here if the directory must exist.
+        # For now, we proceed, and the open() call later will fail if the directory is missing.
+        print(f"Warning: Output directory '{output_dir}' does not exist. File creation might fail.")
+        # Or uncomment the following line to raise an error:
+        # raise FileNotFoundError(f"Output directory '{output_dir}' does not exist. Please create it first.")
+	
+	# If output_file is just a filename (no directory path), output_dir will be empty,
+	# meaning the file will be created in the current working directory, which always exists.
+
     
     # Find all measurement.npy files
     file_paths = []
