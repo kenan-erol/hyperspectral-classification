@@ -1,88 +1,81 @@
-# Classification Tutorial
-Image classification is the computer vision task of mapping an image to a class label.
+# Hyperspectral Image Classification for Drug Identification
 
-## Tutorial - Training and running a neural network
-### Learning Objectives
-- Work with git on Google Colab
-- Write a NeuralNetwork class
-- Implementing training loop
-- Implementing evaluation (run/inference) loop
-- Identify and import loss function
-- Identify and import evaluation metrics
-- Coding practices, documentation
+This project focuses on using hyperspectral imaging and deep learning techniques to classify different types of pharmaceutical pills based on their spectral signatures.
 
-Files involved:
-```
-src/classification_nn.py
-src/networks.py
-src/run_classification_nn.py
-src/train_classification_nn.py
-src/log_utils.py
-```
+## Project Goal
 
-### Tasks
-- Set up git on Google Colab
-- Clone repository on your local machine and Google Colab
-- Create a branch from master using your-name
-- Develop on your local machine and push to your branch in remote
-- Implement all TODOs in the files specified above
-- Commits should be pushed to your remote branch on github
-- Checkout your branch on Google Colab, fetch and rebase, and test your code using run commands (see `bash` folder)
-- Report your scores below (you should get a number higher than 90% on MNIST and 51% on CIFAR-10) i.e.
-```
-Mean accuracy over 10000 images: 91.370% (MNIST)
-Mean accuracy over 10000 images: 52.840% (CIFAR-10)
-```
+The primary objective is to develop and train a classification model capable of accurately identifying drug types from hyperspectral images. This involves:
+1.  Processing hyperspectral data cubes.
+2.  Segmenting individual pills within the images, potentially using methods like the Segment Anything Model (SAM).
+3.  Extracting representative patches from segmented pills.
+4.  Training deep learning models (e.g., adapted ResNet, VGG) on these patches.
+5.  Evaluating the model's performance in classifying different drug types.
+
+## Learning Objectives
+
+- Understand the basics of hyperspectral image data (.raw, .hdr files).
+- Implement data loading and preprocessing pipelines for hyperspectral images.
+- Integrate image segmentation techniques (e.g., SAM2) to isolate objects of interest (pills).
+- Develop strategies for sampling patches from segmented objects.
+- Adapt standard CNN architectures (like ResNet, VGG) for high-dimensional hyperspectral inputs.
+- Implement training and evaluation loops for hyperspectral classification.
+- Utilize appropriate loss functions and evaluation metrics for multi-class classification.
+- Manage experiments using configuration files and command-line arguments.
+- Implement checkpointing and logging (e.g., TensorBoard) for monitoring training progress.
+
+## Key Files Involved
 
 ```
-My accuracy scores:
-Mean accuracy over 10000 images: 96.630% (MNIST)
-Mean accuracy over 10000 images: 51.850% (CIFAR-10)
+src/train_classification_hyper.py # Main training script for hyperspectral data
+src/classification_model.py     # Defines the overall classification model structure
+src/networks.py                 # Contains encoder architectures (ResNet, VGG)
+src/classification_cnn.py       # Contains generic train/evaluate functions (may need adaptation)
+src/net_utils.py                # Utility functions/blocks for networks
+# Potentially add scripts related to SAM2 integration or specific data loading utilities
+bash/train_classification_hyper_resnet.sh # Example script to run training
+bash/train_classification_hyper_vgg.sh   # Example script to run training
+# Add evaluation scripts if created (e.g., run_classification_hyper.py)
 ```
 
-## Tutorial - Training and running a convolutional neural network (CNN)
-### Learning Objectives
-- Work with git on Google Colab
-- Write a ResNet18 encoder network
-- Write a VGGNet11 encoder network
-- Write a ClassificationModel class that can initatiate different types of CNN
-- Implement forward, compute_loss, saving, restoring, etc. functions for ClassificationModel
-- Implement Tensorboard logging
-- Implementing training loop
-- Implementing evaluation (run/inference) loop
-- Identify and import loss function
-- Identify and import evaluation metrics
-- Coding practices, documentation
+## Tasks
 
-Files involved:
-```
-src/classification_cnn.py
-src/classification_model.py
-src/net_utils.py
-src/networks.py
-src/run_classification_cnn.py
-src/train_classification_cnn.py
-```
+- **Data Preparation:**
+    - Write functions to load hyperspectral data (e.g., using spectral libraries or custom readers for ENVI format).
+    - Understand and utilize metadata from `.hdr` files (wavelengths, dimensions, etc.).
+- **Segmentation and Patching:**
+    - Integrate SAM2 (or another segmentation method) to generate masks for pills in the hyperspectral images.
+    - Implement logic to extract patches from the masked pill regions. Consider strategies like sampling multiple patches per pill or using the bounding box.
+- **Dataset Creation:**
+    - Create a PyTorch `Dataset` class (`HyperspectralPatchDataset`) to handle loading images, generating/using masks, extracting patches, and applying transformations.
+    - Implement a `DataLoader` with appropriate batching and collation, handling potential errors during data loading (e.g., skipping None samples).
+- **Model Adaptation:**
+    - Modify the `ClassificationModel` and underlying encoder networks (`ResNet18Encoder`, `VGGNet11Encoder`) to accept the correct number of input channels (e.g., 256 based on your data).
+    - Ensure the final classification layer in the decoder outputs the correct number of drug classes.
+- **Training:**
+    - Configure the `train_classification_hyper.py` script to use the new dataset and adapted model.
+    - Set up the optimizer (e.g., Adam) and learning rate scheduler.
+    - Implement the training loop, including forward pass, loss calculation (e.g., CrossEntropyLoss), backpropagation, and optimizer steps.
+    - Integrate TensorBoard logging for loss, accuracy, and potentially image samples.
+- **Evaluation:**
+    - Implement an evaluation loop to assess model performance on a held-out test set.
+    - Calculate relevant metrics (e.g., overall accuracy, per-class accuracy, confusion matrix).
+- **Experimentation:**
+    - Use the provided bash scripts (or create new ones) to run training experiments with different hyperparameters (learning rate, batch size, epochs, model type).
+    - Document the results obtained.
 
-### Tasks
-- Develop on your local machine and push to your branch in remote
-- Implement all TODOs in the files specified above
-- Commits should be pushed to your remote branch on github
-- Checkout your branch on Google Colab, fetch and rebase, and test your code using run commands (see `bash` folder)
-- Report your scores below (you should get a number higher than 98% on MNIST and 80% on CIFAR-10) i.e.
-```
-Mean accuracy over 10000 images: 98.240% (VGG-11 on MNIST)
-Mean accuracy over 10000 images: 80.210% (VGG-11 on CIFAR-10)
+## Reporting Results
 
-Mean accuracy over 10000 images: 99.270% (ResNet-18 on MNIST)
-Mean accuracy over 10000 images: 81.340% (ResNet-18 on CIFAR-10)
-```
+*(This section can be filled in after running experiments)*
 
-```
-my scores
-Mean accuracy over 10000 images: 98.950% (ResNet-18 on MNIST)
-Mean accuracy over 10000 images: 81.200% (ResNet-18 on CIFAR-10)
+Report the final classification accuracy achieved on the test set for different model configurations. Include details like:
+- Model Architecture (e.g., ResNet-18, VGG-11)
+- Key Hyperparameters
+- Overall Test Accuracy
+- Per-class Accuracy (if relevant)
+- Confusion Matrix (optional but helpful)
 
-Mean accuracy over 10000 images: 99.020% (VGG-11 on MNIST)
-Mean accuracy over 10000 images: 85.630% (VGG-11 on CIFAR-10)
+Example:
+```
+Model: ResNet-18 (adapted for 256 channels)
+Test Accuracy: XX.XX%
 ```
