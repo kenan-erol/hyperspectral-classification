@@ -9,7 +9,8 @@ from sklearn.model_selection import train_test_split
 
 from classification_model import ClassificationModel
 from classification_cnn import train
-from sam2 import SAM2  # Import our SAM2 wrapper class
+from sam2.build_sam import build_sam2
+from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 from dataset import HyperspectralDataset
 from log_utils import setup_logging, log_metrics
@@ -171,20 +172,16 @@ def collate_fn_skip_none(batch):
 if __name__ == '__main__':
     os.makedirs(args.checkpoint_path, exist_ok=True)
 
-    # Initialize SAM2 model with provided checkpoint path
-    try:
-        sam2_model = SAM2(checkpoint_path=args.sam2_checkpoint_path)
-        print("SAM2 model initialized successfully for pill segmentation")
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-        print("Please download SAM2 checkpoints using: cd sam2/checkpoints && ./download_ckpts.sh")
-        exit(1)
-    except Exception as e:
-        print(f"Error initializing SAM2: {e}")
-        exit(1)
+    sam2_checkpoint = args.sam2_checkpoint_path # Use the argument for checkpoint path
+    model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml" # Assuming this config path is correct
+
+    sam2 = build_sam2(model_cfg, sam2_checkpoint, device=args.device, apply_postprocessing=False)
+
+    mask_generator = SAM2AutomaticMaskGenerator(sam2)
 
     transform = transforms.Compose([
-        transforms.ToTensor(),
+        transforms.ToTensor(), # Convert numpy array to tensor
+        # Add other transforms if needed, e.g., normalization
     ])
 
     print("Loading image list and labels...")
@@ -232,7 +229,7 @@ if __name__ == '__main__':
     train_dataset = HyperspectralPatchDataset(
         args.data_dir,
         train_samples,
-        sam2_model=sam2_model,  # Pass the initialized model
+        sam2_model=mask_generator,  # Pass the initialized model
         num_patches_per_image=args.num_patches_per_image,
         transform=transform,
         target_size=(args.patch_size, args.patch_size)
