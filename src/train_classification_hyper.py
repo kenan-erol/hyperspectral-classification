@@ -218,14 +218,23 @@ if __name__ == '__main__':
     try:
         with open(args.label_file, 'r') as f:
             for line in f:
-                relative_path, label_str = line.strip().split()
-                label = int(label_str)
-                full_path_check = os.path.join(args.data_dir, relative_path)
-                if os.path.exists(full_path_check):
-                    all_samples.append((relative_path, label))
-                    class_labels.add(label)
-                else:
-                    print(f"Warning: Image file not found {full_path_check}, skipping.")
+                line = line.strip() # Remove leading/trailing whitespace
+                if not line: # Skip empty lines
+                    continue
+                try:
+                    # Split only on the last space to handle paths with spaces
+                    relative_path, label_str = line.rsplit(' ', 1)
+                    label = int(label_str) # Convert label part to integer
+                    full_path_check = os.path.join(args.data_dir, relative_path)
+                    if os.path.exists(full_path_check):
+                        all_samples.append((relative_path, label))
+                        class_labels.add(label)
+                    else:
+                        print(f"Warning: Image file not found {full_path_check}, skipping.")
+                except ValueError:
+                    # Handle lines that don't have the expected format (e.g., no space, non-integer label)
+                    print(f"Warning: Skipping malformed line in {args.label_file}: '{line}'")
+
     except FileNotFoundError:
         print(f"Error: Label file not found at {args.label_file}")
         exit(1)
