@@ -12,9 +12,9 @@ from classification_cnn import train
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
-from dataset import HyperspectralDataset
-from log_utils import setup_logging, log_metrics
-import logging
+#from dataset import HyperspectralDataset
+#from log_utils import setup_logging, log_metrics
+#import logging
 
 # Define command-line arguments
 parser = argparse.ArgumentParser()
@@ -57,9 +57,8 @@ parser.add_argument('--checkpoint_path',
 parser.add_argument('--device',
     type=str, default='cuda', help='Device to use: gpu, cpu')
 
-# Add a new argument for SAM2 checkpoint path
 parser.add_argument('--sam2_checkpoint_path',
-    type=str, default="./sam2/checkpoints/sam2_hiera_base_plus.pt", 
+    type=str, default="./sam2/checkpoints/sam2.1_hiera_base_plus.pt", 
     help='Path to the SAM2 checkpoint file')
 
 args = parser.parse_args()
@@ -173,9 +172,38 @@ if __name__ == '__main__':
     os.makedirs(args.checkpoint_path, exist_ok=True)
 
     sam2_checkpoint = args.sam2_checkpoint_path # Use the argument for checkpoint path
-    model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml" # Assuming this config path is correct
+    #model_cfg = "/configs/sam2.1/sam2.1_hiera_l.yaml" # Assuming this config path is correct
 
-    sam2 = build_sam2(model_cfg, sam2_checkpoint, device=args.device, apply_postprocessing=False)
+    base_config_name = "configs" # <--- Base directory name within the sam2 package
+
+    if "sam2.1_hiera_tiny" in os.path.basename(sam2_checkpoint):
+        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_t.yaml")
+    elif "sam2.1_hiera_small" in os.path.basename(sam2_checkpoint):
+        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_s.yaml")
+    elif "sam2.1_hiera_base_plus" in os.path.basename(sam2_checkpoint):
+        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_b+.yaml") # Correct name for Hydra
+    elif "sam2.1_hiera_large" in os.path.basename(sam2_checkpoint):
+        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_l.yaml") # Correct name for Hydra
+    # Add older sam2 checkpoints if needed
+    elif "sam2_hiera_tiny" in os.path.basename(sam2_checkpoint):
+         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_t.yaml")
+    elif "sam2_hiera_small" in os.path.basename(sam2_checkpoint):
+         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_s.yaml")
+    elif "sam2_hiera_base_plus" in os.path.basename(sam2_checkpoint):
+         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_b+.yaml")
+    elif "sam2_hiera_large" in os.path.basename(sam2_checkpoint):
+         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_l.yaml")
+    else:
+        print(f"Warning: Could not determine config name for checkpoint {sam2_checkpoint}. Using default large config.")
+        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_l.yaml") # Default if unsure
+
+    # Remove the '.yaml' extension for Hydra's compose function
+    model_cfg_name = model_cfg_name.replace(".yaml", "")
+
+    print(f"Using SAM2 checkpoint: {sam2_checkpoint}")
+    print(f"Using SAM2 config name for Hydra: {model_cfg_name}")
+
+    sam2 = build_sam2(model_cfg_name, sam2_checkpoint, device=args.device, apply_postprocessing=False)
 
     mask_generator = SAM2AutomaticMaskGenerator(sam2)
 
