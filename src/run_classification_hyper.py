@@ -13,6 +13,8 @@ from classification_cnn import evaluate # Removed train
 from sam2 import SAM2 # Assuming SAM2 has a 'generate_masks' method returning bboxes
 import argparse # Add argparse for command-line arguments
 
+from datasets import HyperspectralPatchDataset, collate_fn_skip_none
+
 # --- Argument Parser ---
 parser = argparse.ArgumentParser(description="Evaluate Hyperspectral Classification Model")
 parser.add_argument('--data_dir', type=str, required=True, help='Directory containing hyperspectral data subfolders')
@@ -27,134 +29,6 @@ parser.add_argument('--patch_size', type=int, default=224, help='Patch size used
 parser.add_argument('--train_split_ratio', type=float, default=0.8, help='Train split ratio used during training (to define the test set)')
 parser.add_argument('--device', type=str, default='cuda', help='Device to use: cuda or cpu')
 args = parser.parse_args()
-
-
-# --- Dataset Class (Identical to train script) ---
-class HyperspectralPatchDataset(Dataset):
-    # Modified to accept a list of samples directly
-    def __init__(self, data_dir, samples_list, num_patches_per_image=5, transform=None, target_size=(224, 224)):
-        self.data_dir = data_dir
-        self.transform = transform
-        self.target_size = target_size
-        self.num_patches_per_image = num_patches_per_image
-        self.sam2 = SAM2()  # Initialize SAM2
-
-        # Store the original image paths and labels provided
-        self.original_samples = samples_list
-
-        # Create multiple entries for patch sampling
-        self.samples_for_iteration = []
-        for image_path, label in self.original_samples:
-            for _ in range(self.num_patches_per_image):
-                # Store the *original* path, patch extraction happens in __getitem__
-                self.samples_for_iteration.append((image_path, label))
-
-    def __len__(self):
-        # Length is based on the number of patches we want to generate
-        return len(self.samples_for_iteration)
-
-    # ... existing _adjust_bbox method ...
-    def _adjust_bbox(self, bbox, img_shape):
-        """Make bbox square, enlarge slightly, and clip to image bounds."""
-        x, y, w, h = bbox
-        img_h, img_w = img_shape[:2]
-
-        # Center
-        cx = x + w / 2
-        cy = y + h / 2
-
-        # New side (max dimension + 10% padding)
-        side = max(w, h) * 1.1
-
-        # New square coordinates
-        new_x = int(cx - side / 2)
-        new_y = int(cy - side / 2)
-        new_w = int(side)
-        new_h = int(side)
-
-        # Clip to image boundaries
-        new_x = max(0, new_x)
-        new_y = max(0, new_y)
-        new_w = min(img_w - new_x, new_w)
-        new_h = min(img_h - new_y, new_h)
-
-        return new_x, new_y, new_w, new_h
-
-
-    def __getitem__(self, idx):
-        # Get the original image path and label for this iteration
-        original_image_path, label = self.samples_for_iteration[idx]
-        full_path = os.path.join(self.data_dir, original_image_path) # Construct full path
-
-        try:
-            # Load the hyperspectral image (H, W, C) or (C, H, W)
-            # Assuming np.load results in (H, W, C) for consistency
-            image = np.load(full_path)  # Shape: (H, W, C) or similar
-            if image.ndim == 2:  # Handle grayscale case if necessary
-                image = np.expand_dims(image, axis=-1)
-
-            # ... rest of the __getitem__ logic remains the same ...
-            # ... (mask generation, bbox selection, cropping, transform, resize) ...
-            img_h, img_w = image.shape[:2]
-
-            # Generate masks using SAM2 (returns list of bounding boxes [x, y, w, h])
-            masks_bboxes = self.sam2.generate_masks(image)  # Adapt based on actual SAM2 output
-
-            if not masks_bboxes:
-                # Handle case with no masks: use random crop as fallback
-                print(f"Warning: No masks found for {full_path}. Using random crop.")
-                rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
-                rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
-                              rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
-            else:
-                # Select one random bounding box
-                selected_bbox = random.choice(masks_bboxes)
-
-                # Adjust bounding box (square, enlarge, clip)
-                adj_x, adj_y, adj_w, adj_h = self._adjust_bbox(selected_bbox, image.shape)
-
-                # Crop the patch
-                patch = image[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :]
-
-            # Ensure patch is not empty after adjustments/cropping
-            if patch.size == 0:
-                print(f"Warning: Empty patch generated for {full_path}. Using random crop.")
-                rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
-                rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
-                              rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
-
-            # Apply transformations (including resize)
-            if self.transform:
-                patch_tensor = self.transform(patch)
-            else:
-                # Basic conversion if no transform provided
-                patch_tensor = torch.from_numpy(patch.transpose((2, 0, 1))).float()  # C, H, W
-
-            # Ensure patch is resized to target size
-            if patch_tensor.shape[1:] != self.target_size:
-                patch_tensor = F.interpolate(
-                    patch_tensor.unsqueeze(0),
-                    size=self.target_size,
-                    mode='bilinear',
-                    align_corners=False
-                ).squeeze(0)
-
-            return patch_tensor, label
-
-        except Exception as e:
-            print(f"Error processing {full_path} at index {idx}: {e}")
-            # Return a dummy item that will be filtered out by the collate function
-            return None
-
-# --- Collate Function (Identical to train script) ---
-def collate_fn_skip_none(batch):
-    """Collate function that filters out None items."""
-    batch = list(filter(lambda x: x is not None, batch))
-    if not batch:
-        return torch.tensor([]), torch.tensor([]) # Handle empty batch case
-    return torch.utils.data.dataloader.default_collate(batch)
 
 
 if __name__ == '__main__':

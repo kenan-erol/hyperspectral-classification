@@ -153,3 +153,5 @@ Generate the labels file:
 After this, you can run your training script as normal, but consider using a higher num_patches_per_image (like 100) to ensure you get good coverage of all pills:
 .
 The scripts are designed to maintain the directory structure and properly identify drug classes from your data folder structure.
+
+also run pip install -e . in sam2 to install the SAM2 package in editable mode.
