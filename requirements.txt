@@ -20,7 +20,7 @@ pillow>=8.0.0
 # SAM2 (Segment Anything Model) dependencies
 pycocotools>=2.0.2
 onnxruntime>=1.8.0
-onnx>=1.9.0
+#onnx>=1.9.0
 
 # Utilities for data processing and visualization
 pandas>=1.2.0

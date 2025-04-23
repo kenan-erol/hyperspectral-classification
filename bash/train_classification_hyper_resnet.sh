@@ -1,10 +1,14 @@
 #!/bin/bash
 
+pwd
+cd $SLURM_SUBMIT_DIR
+pwd
+
 export CUDA_VISIBLE_DEVICES=0
 
 python src/train_classification_hyper.py \
 --n_batch 25 \
---data_dir './data-processed/' \
+--data_dir './data_processed/' \
 --label_file './labels.txt' \
 --num_patches_per_image 5 \
 --patch_size 224 \

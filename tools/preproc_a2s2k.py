@@ -8,10 +8,10 @@ from tqdm import tqdm # For progress bar
 
 # --- Need to import SAM2 components ---
 # Add the project root to sys.path to allow importing sam2 and other modules
-import sys
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+#import sys
+#project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+#f project_root not in sys.path:
+#    sys.path.insert(0, project_root)
 
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator

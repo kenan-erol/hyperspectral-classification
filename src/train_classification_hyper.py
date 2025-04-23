@@ -240,7 +240,13 @@ if __name__ == '__main__':
                     # --- End robust splitting ---
 
                     label = int(label_str) # Convert label part to integer
+
+                    # --- Add Debugging ---
+                    print(f"DEBUG: args.data_dir = {args.data_dir}")
+                    print(f"DEBUG: relative_path = {relative_path}")
                     full_path_check = os.path.join(args.data_dir, relative_path)
+                    print(f"DEBUG: Checking path: {full_path_check}")
+                    # --- End Debugging ---
 
                     if os.path.exists(full_path_check):
                         all_samples.append((relative_path, label))
