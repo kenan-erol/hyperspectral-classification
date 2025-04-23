@@ -215,25 +215,43 @@ if __name__ == '__main__':
     print("Loading image list and labels...")
     all_samples = []
     class_labels = set()
+    # ... inside the if __name__ == '__main__': block ...
     try:
         with open(args.label_file, 'r') as f:
-            for line in f:
+            for i, line in enumerate(f): # Add line number for better debugging
                 line = line.strip() # Remove leading/trailing whitespace
                 if not line: # Skip empty lines
                     continue
                 try:
-                    # Split only on the last space to handle paths with spaces
-                    relative_path, label_str = line.rsplit(' ', 1)
+                    # --- More robust splitting ---
+                    last_space_idx = line.rfind(' ')
+
+                    # Check if a space was found
+                    if last_space_idx == -1:
+                        raise ValueError("No space found to separate path and label.")
+
+                    # Extract path and label parts
+                    relative_path = line[:last_space_idx].strip() # Strip path just in case
+                    label_str = line[last_space_idx:].strip()     # Strip label part
+
+                    # Check if parts are empty after stripping
+                    if not relative_path or not label_str:
+                        raise ValueError("Empty path or label after split.")
+                    # --- End robust splitting ---
+
                     label = int(label_str) # Convert label part to integer
                     full_path_check = os.path.join(args.data_dir, relative_path)
+
                     if os.path.exists(full_path_check):
                         all_samples.append((relative_path, label))
                         class_labels.add(label)
                     else:
-                        print(f"Warning: Image file not found {full_path_check}, skipping.")
-                except ValueError:
-                    # Handle lines that don't have the expected format (e.g., no space, non-integer label)
-                    print(f"Warning: Skipping malformed line in {args.label_file}: '{line}'")
+                        print(f"Warning: Image file not found {full_path_check}, skipping line {i+1}.")
+
+                except ValueError as e:
+                    # Handle lines that don't have the expected format
+                    # Include the specific reason from the ValueError
+                    print(f"Warning: Skipping malformed line {i+1} in {args.label_file}: '{line}' - Reason: {e}")
 
     except FileNotFoundError:
         print(f"Error: Label file not found at {args.label_file}")
