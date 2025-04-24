@@ -12,6 +12,8 @@ from classification_cnn import train
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
+import matplotlib.pyplot as plt
+
 from datasets import HyperspectralPatchDataset, collate_fn_skip_none
 
 #from dataset import HyperspectralDataset
@@ -206,6 +208,83 @@ if __name__ == '__main__':
         drop_last=True
     )
     print("DataLoader created.")
+
+    print("Saving a few sample patches to files...")
+    num_samples_to_save = 5
+    save_dir = os.path.join(args.checkpoint_path, "sample_patches") # Directory to save patches
+    os.makedirs(save_dir, exist_ok=True)
+    print(f"Saving patches to: {save_dir}")
+
+    saved_count = 0
+    # Try to get a few more indices in case some samples fail in __getitem__
+    vis_indices = random.sample(range(len(train_dataset)), min(num_samples_to_save * 3, len(train_dataset)))
+    idx_iter = iter(vis_indices)
+
+    while saved_count < num_samples_to_save:
+        try:
+            idx = next(idx_iter)
+            # Retrieve original path info for filename (optional but helpful)
+            original_image_path, _ = train_dataset.samples_for_iteration[idx] # Access internal list
+            base_filename = os.path.splitext(os.path.basename(original_image_path))[0]
+
+            patch_tensor, label = train_dataset[idx]
+
+            if patch_tensor is None: # Skip if __getitem__ returned None
+                 continue
+
+            # Convert tensor back to numpy (CHW -> HWC) for display/saving
+            patch_np = patch_tensor.numpy().transpose((1, 2, 0))
+    
+            # Select bands to display (e.g., first 3, or specific RGB indices)
+            # Option 1: First 3 channels
+            # display_patch = patch_np[:, :, :3]
+    
+            # Option 2: Specific indices (ensure they exist)
+            # Example: R=50, G=30, B=10 (adjust if your channel count is different)
+            if patch_np.shape[2] >= 50: # Check if enough channels exist
+                 display_patch = patch_np[:, :, [50, 30, 10]] # Example indices
+            else: # Fallback: Use first 3 or mean
+                 display_patch = patch_np[:, :, :min(3, patch_np.shape[2])]
+                 if display_patch.shape[2] == 1: # If only one channel, make it grayscale RGB
+                     display_patch = np.concatenate([display_patch]*3, axis=-1)
+                 elif display_patch.shape[2] == 2: # Handle 2 channels if necessary
+                     # Example: duplicate one channel or add a zero channel
+                     display_patch = np.concatenate([display_patch, display_patch[:,:,:1]], axis=-1)
+    
+            # Normalize for display/saving (0-1 range is good for imsave)
+            min_val = np.min(display_patch)
+            max_val = np.max(display_patch)
+            if max_val > min_val:
+                 display_patch = (display_patch - min_val) / (max_val - min_val)
+            else:
+                 display_patch = np.zeros_like(display_patch) # Handle constant image case
+            display_patch = np.clip(display_patch, 0, 1) # Ensure values are in [0, 1]
+
+            # Construct save path
+            save_filename = f"sample_{saved_count}_idx{idx}_label{label}_{base_filename}.png"
+            save_path = os.path.join(save_dir, save_filename)
+
+            # Save the image using matplotlib.pyplot.imsave
+            plt.imsave(save_path, display_patch)
+
+            saved_count += 1
+
+        except StopIteration:
+             print(f"Warning: Ran out of indices while trying to save {num_samples_to_save} samples.")
+             break # Exit loop if we run out of indices
+        except Exception as e:
+             # Print error and original path for context
+             try:
+                 failed_path = train_dataset.samples_for_iteration[idx][0]
+             except:
+                 failed_path = "unknown"
+             print(f"Error saving sample patch from index {idx} (orig path: {failed_path}): {e}")
+             # Continue to try next index
+
+    # Remove the plt.show() and related figure setup
+    # plt.tight_layout() # Not needed
+    # plt.show() # Remove this line
+# --- End Visualization Code ---
 
     print(f"Initializing model with {args.num_channels} input channels and {num_classes} classes on {args.device}...")
     model = ClassificationModel(

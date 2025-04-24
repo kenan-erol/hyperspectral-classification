@@ -58,8 +58,6 @@ class HyperspectralPatchDataset(Dataset):
 
         return new_x, new_y, new_w, new_h
 
-    # filepath: /Users/eksibaklava/Desktop/code/hyperspectral-classification/src/train_classification_hyper.py
-# ... inside HyperspectralPatchDataset class ...
 
     def __getitem__(self, idx):
         original_image_path, label = self.samples_for_iteration[idx]
