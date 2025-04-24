@@ -58,55 +58,100 @@ class HyperspectralPatchDataset(Dataset):
 
         return new_x, new_y, new_w, new_h
 
+    # filepath: /Users/eksibaklava/Desktop/code/hyperspectral-classification/src/train_classification_hyper.py
+# ... inside HyperspectralPatchDataset class ...
+
     def __getitem__(self, idx):
         original_image_path, label = self.samples_for_iteration[idx]
         full_path = os.path.join(self.data_dir, original_image_path)
 
         try:
-            image = np.load(full_path)
-            if image.ndim == 2:
-                image = np.expand_dims(image, axis=-1)
+            # Load the full hyperspectral image (assuming HWC format after potential expansion)
+            image_data = np.load(full_path)
+            if image_data.ndim == 2:
+                image_data = np.expand_dims(image_data, axis=-1) # Ensure 3 dims (H, W, C)
 
-            img_h, img_w = image.shape[:2]
+            img_h, img_w, img_c = image_data.shape
 
-            masks_bboxes = self.sam2.generate_masks(image)
+            # --- Convert hyperspectral to RGB for SAM2 ---
+            # Option 1: Select specific bands (e.g., Red, Green, Blue indices if known)
+            # Example: Assuming R=50, G=30, B=10
+            # if img_c >= 50: # Ensure enough channels
+            #     rgb_image = image_data[:, :, [50, 30, 10]].astype(np.uint8)
+            # else: # Fallback if not enough channels
+            #     print(f"Warning: Not enough channels in {full_path} for RGB conversion. Using grayscale.")
+            #     rgb_image = np.mean(image_data, axis=2).astype(np.uint8)
+            #     rgb_image = np.stack([rgb_image]*3, axis=-1) # Convert grayscale to 3-channel RGB
 
-            if not masks_bboxes:
+            # Option 2: Use mean across channels (simple grayscale representation)
+            rgb_image = np.mean(image_data, axis=2)
+            # Normalize to 0-255 for SAM2 if needed (check SAM2 input requirements)
+            rgb_image = ((rgb_image - np.min(rgb_image)) / (np.max(rgb_image) - np.min(rgb_image)) * 255).astype(np.uint8)
+            rgb_image = np.stack([rgb_image]*3, axis=-1) # Convert grayscale to 3-channel RGB
+            # --- End RGB Conversion ---
+
+
+            # --- Fix SAM2 call and result processing ---
+            # Use generate() method which expects an RGB image (HWC, uint8)
+            mask_results = self.sam2.generate(rgb_image) # Use generate()
+
+            if not mask_results:
                 print(f"Warning: No masks found for {full_path}. Using random crop.")
                 rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
                 rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
+                # Crop from the original hyperspectral data
+                patch = image_data[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
                               rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
             else:
-                selected_bbox = random.choice(masks_bboxes)
-                adj_x, adj_y, adj_w, adj_h = self._adjust_bbox(selected_bbox, image.shape)
-                patch = image[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :]
+                # Select a random mask result (each is a dictionary)
+                selected_mask_info = random.choice(mask_results)
+                # Get the bounding box ('bbox' is in XYWH format)
+                bbox_xywh = selected_mask_info['bbox']
+                # Adjust the bounding box
+                adj_x, adj_y, adj_w, adj_h = self._adjust_bbox(bbox_xywh, image_data.shape)
+                # Crop from the original hyperspectral data
+                patch = image_data[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :]
+            # --- End Fix ---
 
-            if patch.size == 0:
-                print(f"Warning: Empty patch generated for {full_path}. Using random crop.")
+            if patch.size == 0 or patch.shape[0] == 0 or patch.shape[1] == 0: # More robust empty check
+                print(f"Warning: Empty patch generated for {full_path} after cropping. Using random crop.")
                 rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
                 rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
+                patch = image_data[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
                               rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
+                # Handle case where even random crop might be empty if target_size > image size
+                if patch.size == 0 or patch.shape[0] == 0 or patch.shape[1] == 0:
+                     print(f"Error: Could not generate valid patch for {full_path}. Skipping.")
+                     return None # Skip this sample
 
-            if self.transform:
-                patch_tensor = self.transform(patch)
-            else:
-                patch_tensor = torch.from_numpy(patch.transpose((2, 0, 1))).float()
+            # --- Transform and Resize ---
+            # Ensure patch is C, H, W for PyTorch transforms/interpolation
+            patch = patch.transpose((2, 0, 1)) # HWC to CHW
+            patch_tensor = torch.from_numpy(patch).float()
 
+            # Resize if necessary (using interpolate requires CHW format)
             if patch_tensor.shape[1:] != self.target_size:
+                # Add batch dimension for interpolate, then remove
                 patch_tensor = F.interpolate(
                     patch_tensor.unsqueeze(0),
                     size=self.target_size,
-                    mode='bilinear',
+                    mode='bilinear', # Consider 'nearest' if bilinear interpolation is problematic for spectral data
                     align_corners=False
                 ).squeeze(0)
+
+            # Apply other transforms if they expect CHW tensor
+            if self.transform:
+                patch_tensor = self.transform(patch_tensor)
+            # --- End Transform and Resize ---
+
 
             return patch_tensor, label
 
         except Exception as e:
             print(f"Error processing {full_path} at index {idx}: {e}")
-            return None
+            # Optionally re-raise or return None depending on desired behavior
+            # raise e # Re-raise to stop execution
+            return None # Skip this sample if errors occur
 
 
 def collate_fn_skip_none(batch):
