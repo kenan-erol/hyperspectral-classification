@@ -12,6 +12,8 @@ from classification_cnn import train
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
+import torch.multiprocessing as mp
+
 import matplotlib.pyplot as plt
 
 from datasets import HyperspectralPatchDataset, collate_fn_skip_none
@@ -69,6 +71,15 @@ args = parser.parse_args()
 
 
 if __name__ == '__main__':
+    # --- Set multiprocessing start method ---
+    try:
+        mp.set_start_method('spawn', force=True)
+        print("Multiprocessing start method set to 'spawn'.")
+    except RuntimeError as e:
+        if "context has already been set" not in str(e):
+             print(f"Warning: Could not set multiprocessing start method: {e}")
+    # -----------------------------------------
+    
     os.makedirs(args.checkpoint_path, exist_ok=True)
 
     sam2_checkpoint = args.sam2_checkpoint_path # Use the argument for checkpoint path
