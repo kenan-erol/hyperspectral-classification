@@ -144,7 +144,7 @@ if __name__ == '__main__':
                     # # --- Add Debugging ---
                     # print(f"DEBUG: args.data_dir = {args.data_dir}")
                     # print(f"DEBUG: relative_path = {relative_path}")
-                    # full_path_check = os.path.join(args.data_dir, relative_path)
+                    full_path_check = os.path.join(args.data_dir, relative_path)
                     # print(f"DEBUG: Checking path: {full_path_check}")
                     # # --- End Debugging ---
 
