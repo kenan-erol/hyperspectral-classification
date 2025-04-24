@@ -124,40 +124,64 @@ def main(args):
                     print(f"Warning: Image file not found {full_image_path}, skipping.")
                     continue
 
-                # Load the full image
+                # Load the full hyperspectral image
                 image = np.load(full_image_path)
                 if image.ndim == 2: # Add channel dim if grayscale
                     image = np.expand_dims(image, axis=-1)
                 if image.dtype == np.float64: # Convert to float32 if needed
                     image = image.astype(np.float32)
+                img_h, img_w, img_c = image.shape # Get original dimensions
 
-                # Generate masks/bboxes using SAM2
-                # The generate method returns a list of dicts
-                masks_data = mask_generator.generate(image)
+                # --- Convert hyperspectral to RGB for SAM2 ---
+                # Option 1: Select specific bands (e.g., R=50, G=30, B=10)
+                # if img_c >= 50:
+                #     rgb_image_for_sam = image[:, :, [50, 30, 10]]
+                # else: # Fallback
+                #     rgb_image_for_sam = np.mean(image, axis=2)
+                #     rgb_image_for_sam = np.stack([rgb_image_for_sam]*3, axis=-1)
+
+                # Option 2: Use mean across channels (simple grayscale representation)
+                rgb_image_for_sam = np.mean(image, axis=2)
+                # Normalize to 0-255 uint8 for SAM2
+                min_val, max_val = np.min(rgb_image_for_sam), np.max(rgb_image_for_sam)
+                if max_val > min_val:
+                    rgb_image_for_sam = ((rgb_image_for_sam - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+                else:
+                    rgb_image_for_sam = np.zeros((img_h, img_w), dtype=np.uint8) # Handle constant image
+                rgb_image_for_sam = np.stack([rgb_image_for_sam]*3, axis=-1) # Convert grayscale to 3-channel RGB
+                # --- End RGB Conversion ---
+
+                # Generate masks using SAM2 on the RGB image
+                # Add debug print for the input shape to generate
+                # print(f"DEBUG: Input shape to mask_generator.generate: {rgb_image_for_sam.shape}, dtype: {rgb_image_for_sam.dtype}")
+                masks_data = mask_generator.generate(rgb_image_for_sam) # Pass the 3-channel uint8 image
+                # print(f"DEBUG: Number of masks found: {len(masks_data)}") # Debug print
 
                 if not masks_data:
                     # print(f"Warning: No masks found for {full_image_path}. Skipping patch generation for this image.")
-                    # Optionally implement random cropping as fallback here if desired
                     continue
 
                 # Select masks (e.g., based on area, score, or just take some)
-                # Here, we'll take up to num_patches_per_image, sorted by area
                 masks_data.sort(key=lambda x: x['area'], reverse=True)
                 selected_masks = masks_data[:args.num_patches_per_image]
 
                 for i, mask_info in enumerate(selected_masks):
                     bbox = mask_info['bbox'] # Get bbox [x, y, w, h]
-                    adjusted_bbox = _adjust_bbox(bbox, image.shape)
+                    adjusted_bbox = _adjust_bbox(bbox, image.shape) # Adjust based on ORIGINAL image shape
 
                     if adjusted_bbox is None:
                         # print(f"Warning: Invalid adjusted bbox for a mask in {full_image_path}. Skipping this patch.")
                         continue
 
                     adj_x, adj_y, adj_w, adj_h = adjusted_bbox
+                    # Crop from the ORIGINAL hyperspectral image
                     patch_np = image[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :]
+                    # print(f"DEBUG: Cropped patch shape: {patch_np.shape}") # Debug print
 
-                    # Resize the patch
+                    # Resize the ORIGINAL hyperspectral patch
                     resized_patch = resize_patch(patch_np, (args.patch_size, args.patch_size), device)
+                    # print(f"DEBUG: Resized patch shape: {resized_patch.shape if resized_patch is not None else 'None'}") # Debug print
+
 
                     if resized_patch is None:
                         # print(f"Warning: Empty patch after extraction/resizing for {full_image_path}. Skipping.")
@@ -169,17 +193,25 @@ def main(args):
                     output_patch_path = os.path.join(patches_output_dir, patch_filename)
 
                     # Save the patch
-                    np.save(output_patch_path, resized_patch)
+                    np.save(output_patch_path, resized_patch.astype(np.float32)) # Ensure saving as float32
 
                     # Store the relative path (from output_dir) and label
-                    # The A2S2K load_dataset expects paths relative to its data_path
                     relative_patch_path = os.path.join("patches", patch_filename)
                     all_patch_paths.append(relative_patch_path)
                     all_labels.append(label)
                     patch_counter += 1
 
             except Exception as e:
-                print(f"Error processing line '{line}': {e}")
+                # --- Improved Error Reporting ---
+                import traceback
+                print(f"\n--- ERROR ---")
+                print(f"Error processing line '{line}' corresponding to image '{full_image_path}':")
+                print(f"Exception Type: {type(e)}")
+                print(f"Exception Message: {e}")
+                print("Traceback:")
+                traceback.print_exc()
+                print(f"-------------")
+                # --- End Improved Error Reporting ---
                 # Decide if you want to stop or continue
                 # raise e # Uncomment to stop on error
                 continue # Comment out to stop on error
