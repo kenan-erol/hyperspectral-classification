@@ -41,6 +41,13 @@ class HyperspectralPatchDataset(Dataset):
         print(f"Dataset initialized. Total samples for iteration: {len(self.samples_for_iteration)}")
 
 
+    def _expand_samples(self, samples, num_patches_per_image):
+        """Repeats each sample (image_path, label) num_patches_per_image times."""
+        expanded_samples = []
+        for sample in samples:
+            expanded_samples.extend([sample] * num_patches_per_image)
+        return expanded_samples
+    
     def __len__(self):
         return len(self.samples_for_iteration)
 
