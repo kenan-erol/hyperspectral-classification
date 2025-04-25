@@ -16,8 +16,8 @@ import hydra # Add hydra import
 import hydra.utils
 from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
-MIN_PILL_AREA = 25
-MAX_PILL_AREA = 35*35
+MIN_PILL_AREA = 50
+MAX_PILL_AREA = 170
 MIN_IOU_SCORE = 0.5
 
 class HyperspectralPatchDataset(Dataset):
@@ -108,7 +108,7 @@ class HyperspectralPatchDataset(Dataset):
             sam2_model.eval()
             print("Model instantiated and checkpoint loaded.")
 
-            self._worker_sam2_model = mask_generator_2 = SAM2AutomaticMaskGenerator(
+            self._worker_sam2_model = SAM2AutomaticMaskGenerator(
 				model=sam2_model,
 				points_per_side=64,
 				points_per_batch=64,
