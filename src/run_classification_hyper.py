@@ -15,23 +15,6 @@ import argparse # Add argparse for command-line arguments
 
 from datasets import HyperspectralPatchDataset, collate_fn_skip_none
 
-# GitHub Copilot
-# Okay, let's compare train_classification_hyper.py (the training script) and run_classification_hyper.py (the inference/evaluation script, based on the provided excerpt #run_classification_hyper.py) focusing on differences, assumptions, and potential issues.
-
-# Key Differences & Assumptions:
-
-# Purpose:
-
-# train: Trains a new model from scratch or fine-tunes an existing one. Saves checkpoints.
-# run: Loads a pre-trained model checkpoint and evaluates it on a separate dataset (presumably the test set).
-# Sensibility: This core difference is expected and makes sense.
-# Data Split:
-
-# train: Uses train_test_split to get train_samples.
-# run: Uses the same train_test_split call (with the same random_state and stratify) but takes the other part of the split to get test_samples.
-# Sensibility: This is good practice. It ensures a consistent and non-overlapping split between training and testing.
-# Dataset Instantiation (HyperspectralPatchDataset):
-
 # train (#train_classification_hyper.py:203-213): Instantiates HyperspectralPatchDataset passing sam2_checkpoint_path, sam2_config_name, and device. This allows the dataset's __getitem__ (#datasets.py:95-199) to initialize and use SAM2 within worker processes (#datasets.py:79-93) to generate patches on-the-fly.
 # run (#run_classification_hyper.py:119-127): Instantiates the same HyperspectralPatchDataset class but does not pass the SAM2-related arguments (sam2_checkpoint_path, sam2_config_name).
 # Sensibility: This reveals a major difference in assumptions and is highly suspicious.
