@@ -9,10 +9,11 @@ from sklearn.model_selection import train_test_split
 
 from classification_model import ClassificationModel
 from classification_cnn import train
-from sam2.build_sam import build_sam2
+from sam2.build_sam import build_sam2, _load_checkpoint
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 import hydra # Add hydra import
+import hydra.utils
 from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
 class HyperspectralPatchDataset(Dataset):
@@ -88,20 +89,42 @@ class HyperspectralPatchDataset(Dataset):
                  # Update error message for clarity
                  raise KeyError("Key 'model' not found in the provided sam2_config_name object.")
 
-            # Build SAM2 model using the relevant part of the config (.model)
-            # Pass device string here
-            sam2 = build_sam2(self.sam2_config_name.model, checkpoint_path=self.sam2_checkpoint_path, device=self.device) # Use .model attribute
-            # --- build_sam2 already moves model to device and sets eval mode ---
+            # # Build SAM2 model using the relevant part of the config (.model)
+            # # Pass device string here
+            # sam2 = build_sam2(self.sam2_config_name.model, checkpoint_path=self.sam2_checkpoint_path, device=self.device) # Use .model attribute
+            # # --- build_sam2 already moves model to device and sets eval mode ---
 
-            # Create the generator
-            self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
+            # # Create the generator
+            # self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
+            # print(f"SAM2 initialized successfully in worker {worker_pid} on device {self.device}.")
+        # --- Directly instantiate the model using hydra.utils ---
+            print(f"Instantiating model defined by: {self.sam2_config_name.model.get('_target_', 'N/A')}")
+            # Instantiate the base model structure from the config part
+            sam2_model = hydra.utils.instantiate(self.sam2_config_name.model)
+
+            # Load the checkpoint using the internal helper function
+            if self.sam2_checkpoint_path:
+                print(f"Loading checkpoint into model: {self.sam2_checkpoint_path}")
+                _load_checkpoint(sam2_model, self.sam2_checkpoint_path)
+            else:
+                print("Warning: No SAM2 checkpoint path provided for worker initialization.")
+
+            # Move model to device and set to eval mode
+            sam2_model.to(self.device)
+            sam2_model.eval()
+            print("Model instantiated and checkpoint loaded.")
+            # --- End direct instantiation ---
+
+            # Create the generator using the instantiated model
+            self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2_model)
             print(f"SAM2 initialized successfully in worker {worker_pid} on device {self.device}.")
+
         except Exception as e:
              print(f"!!! ERROR initializing SAM2 in worker {worker_pid}: {e}")
-             # Optionally re-raise or ensure __getitem__ handles this failure
-             # import traceback
-             # traceback.print_exc()
-             raise e # Re-raise to make the failure clear
+             import traceback # Uncomment for debugging
+             traceback.print_exc() # Uncomment for debugging
+             raise e # Re-raise to make the failure clear in the main process
+
 
 
     def __getitem__(self, idx):
