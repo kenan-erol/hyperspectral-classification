@@ -84,12 +84,12 @@ class HyperspectralPatchDataset(Dataset):
         try:
             # --- Use the passed config object ---
             # Check if the necessary 'sam' key exists
-            if 'sam' not in self.sam2_cfg:
-                 raise KeyError("Key 'sam' not found in the provided sam2_cfg object.")
+            if 'sam' not in self.sam2_config_name:
+                 raise KeyError("Key 'sam' not found in the provided sam2_config_name object.")
 
             # Build SAM2 model using the relevant part of the config
             # Pass device string here
-            sam2 = build_sam2(self.sam2_cfg.sam, checkpoint_path=self.sam2_checkpoint_path, device=self.device)
+            sam2 = build_sam2(self.sam2_config_name.sam, checkpoint_path=self.sam2_checkpoint_path, device=self.device)
             # --- build_sam2 already moves model to device and sets eval mode ---
             # sam2.to(self.device) # Not needed if build_sam2 does it
             # sam2.eval() # Not needed if build_sam2 does it
