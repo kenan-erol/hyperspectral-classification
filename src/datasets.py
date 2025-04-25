@@ -16,6 +16,10 @@ import hydra # Add hydra import
 import hydra.utils
 from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
+MIN_PILL_AREA = 25
+MAX_PILL_AREA = 35*35
+MIN_IOU_SCORE = 0.5
+
 class HyperspectralPatchDataset(Dataset):
     def __init__(self,
                  data_dir,
@@ -127,27 +131,21 @@ class HyperspectralPatchDataset(Dataset):
         # --- Reconstruct Transform ---
         transform = None
         if self.transform_mean is not None and self.transform_std is not None and self.num_channels > 0:
-             # Ensure mean/std lists have correct length if not passed correctly
              mean = self.transform_mean if len(self.transform_mean) == self.num_channels else [self.transform_mean[0]] * self.num_channels
              std = self.transform_std if len(self.transform_std) == self.num_channels else [self.transform_std[0]] * self.num_channels
              transform = transforms.Compose([
                  transforms.Normalize(mean=mean, std=std),
              ])
-        # --- End Reconstruct Transform ---
 
-
-        # Get image path and label for the current index
         relative_path, label = self.samples_for_iteration[idx]
         full_image_path = os.path.join(self.data_dir, relative_path)
 
         try:
-            # Load the original hyperspectral image
             image = np.load(full_image_path)
             if image.ndim == 2: image = np.expand_dims(image, axis=-1)
             if image.dtype == np.float64: image = image.astype(np.float32)
             img_h, img_w, img_c = image.shape
 
-            # --- Convert hyperspectral to RGB-like for SAM2 ---
             rgb_image_for_sam = np.mean(image, axis=2)
             min_val, max_val = np.min(rgb_image_for_sam), np.max(rgb_image_for_sam)
             if max_val > min_val:
@@ -155,48 +153,55 @@ class HyperspectralPatchDataset(Dataset):
             else:
                 rgb_image_for_sam = np.zeros((img_h, img_w), dtype=np.uint8)
             rgb_image_for_sam = np.stack([rgb_image_for_sam]*3, axis=-1)
-            # --- End RGB Conversion ---
 
-            # Generate masks using the worker-specific model
             masks_data = self._worker_sam2_model.generate(rgb_image_for_sam)
 
             if not masks_data:
-                print(f"Warning: No masks found for {full_image_path} in worker {os.getpid()}.")
-                return None, None, None # Return None for all
+                # print(f"Warning: No masks found for {full_image_path} in worker {os.getpid()}.") # Less verbose
+                return None, None, None
 
-            # Select a mask (e.g., randomly)
-            mask_info = random.choice(masks_data)
+            # --- Filter and Select Mask ---
+            # 1. Filter by minimum area
+            valid_masks = [m for m in masks_data if m['area'] >= MIN_PILL_AREA]
+
+            # Optional: Add more filters (e.g., max area, score threshold)
+            valid_masks = [m for m in valid_masks if m['area'] <= MAX_PILL_AREA]
+            valid_masks = [m for m in valid_masks if m['predicted_iou'] >= MIN_IOU_SCORE]
+
+            if not valid_masks:
+                # print(f"Warning: No masks passed filtering for {full_image_path} in worker {os.getpid()}.") # Less verbose
+                return None, None, None
+
+            # 2. Select the largest remaining mask
+            mask_info = max(valid_masks, key=lambda x: x['area'])
+            # --- End Filter and Select ---
+
             bbox = mask_info['bbox'] # [x, y, w, h]
 
             # --- Convert bbox coords to INT and Crop ---
-            x, y, w, h = map(int, bbox) # <-- CONVERT TO INT HERE
-            
-            # Basic clipping
+            # (Keep the existing cropping logic using integer bbox)
+            x, y, w, h = map(int, bbox)
             adj_x = max(0, x)
             adj_y = max(0, y)
-            adj_w = min(w, img_w - adj_x) # Use w (original width) for calculation
-            adj_h = min(h, img_h - adj_y) # Use h (original height) for calculation
+            adj_w = min(w, img_w - adj_x)
+            adj_h = min(h, img_h - adj_y)
 
             if adj_w <= 0 or adj_h <= 0:
-                print(f"Warning: Invalid bbox dimensions after clipping for {full_image_path}. Bbox: {bbox}, Clipped: [{adj_x},{adj_y},{adj_w},{adj_h}]")
+                # print(f"Warning: Invalid bbox dimensions after clipping for {full_image_path}.") # Less verbose
                 return None, None, None
 
-            # Use INT indices for slicing
-            patch_np = image[adj_y : adj_y + adj_h, adj_x : adj_x + adj_w, :] # HWC NumPy
+            patch_np = image[adj_y : adj_y + adj_h, adj_x : adj_x + adj_w, :]
 
             if patch_np.size == 0:
-                print(f"Warning: Empty patch after cropping for {full_image_path}. Bbox: {bbox}")
+                # print(f"Warning: Empty patch after cropping for {full_image_path}.") # Less verbose
                 return None, None, None
             # --- End Cropping ---
 
-            # --- Data Type Conversion and Resizing ---
+            # --- Data Type Conversion, Resizing, Transform, CPU move ---
             patch_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
-
-            # Move tensor to the target device *before* interpolation/transform
-            # Use self.device (string) which was passed during init
             tensor_device = torch.device(self.device)
             patch_tensor = patch_tensor.to(tensor_device)
-
+            
             if patch_tensor.shape[1:] != self.target_size:
                 patch_tensor = F.interpolate(
                     patch_tensor.unsqueeze(0),
@@ -204,8 +209,7 @@ class HyperspectralPatchDataset(Dataset):
                     mode='bilinear',
                     align_corners=False
                 ).squeeze(0)
-                
-            # --- Apply Transforms (using the reconstructed transform) ---
+
             if transform:
                  try:
                      patch_tensor = transform(patch_tensor)
@@ -213,11 +217,9 @@ class HyperspectralPatchDataset(Dataset):
                      print(f"Transform TypeError in worker {os.getpid()} for index {idx}: {te}. Input tensor shape: {patch_tensor.shape}, dtype: {patch_tensor.dtype}, device: {patch_tensor.device}")
                      raise te # Re-raise
 
-            # --- ADD THIS LINE ---
-            # Ensure the final tensor is on the CPU before returning
             patch_tensor = patch_tensor.cpu()
-            # --- END ADDITION ---
-            
+            # --- End ---
+
             # Return tensor, label, and the original chosen bbox (can still be float)
             return patch_tensor, label, mask_info['bbox'] # Return original bbox for visualization
 

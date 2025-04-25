@@ -13,3 +13,4 @@ sam2/_C.*
 sam2/outputs/*
 sam2/checkpoints/*.pt
 sam2/demo/backend/checkpoints/*.pt
+dump/
