@@ -16,9 +16,15 @@ import hydra # Add hydra import
 import hydra.utils
 from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
+import statistics
+import copy
+
 MIN_PILL_AREA = 50
 MAX_PILL_AREA = 170
 MIN_IOU_SCORE = 0.5
+
+TARGET_MASK_COUNT = 100
+MIN_MASKS_FOR_ADJUSTMENT = 51 # More than 50
 
 class HyperspectralPatchDataset(Dataset):
     def __init__(self,
@@ -138,7 +144,7 @@ class HyperspectralPatchDataset(Dataset):
 
 
     def __getitem__(self, idx):
-        print(f"Processing index {idx} in worker {os.getpid()}...")
+        # print(f"Processing index {idx} in worker {os.getpid()}...")
         # Ensure worker-specific model is initialized
         if self._worker_sam2_model is None:
             try:
@@ -161,7 +167,7 @@ class HyperspectralPatchDataset(Dataset):
 
         try:
             image = np.load(full_image_path)
-            print(f"Loaded image {full_image_path} in worker {os.getpid()}.")
+            # print(f"Loaded image {full_image_path} in worker {os.getpid()}.")
             if image.ndim == 2: image = np.expand_dims(image, axis=-1)
             if image.dtype == np.float64: image = image.astype(np.float32)
             img_h, img_w, img_c = image.shape
@@ -176,25 +182,64 @@ class HyperspectralPatchDataset(Dataset):
 
             masks_data = self._worker_sam2_model.generate(rgb_image_for_sam)
             
-            print(f"Generated masks for {full_image_path} in worker {os.getpid()}.")
+            # print(f"Generated masks for {full_image_path} in worker {os.getpid()}.")
 
             if not masks_data:
                 # print(f"Warning: No masks found for {full_image_path} in worker {os.getpid()}.") # Less verbose
                 return None, None, None
 
             # --- Filter and Select Mask ---
-            # 1. Filter by minimum area
-            valid_masks = [m for m in masks_data if m['area'] >= MIN_PILL_AREA]
-
-            # Optional: Add more filters (e.g., max area, score threshold)
-            valid_masks = [m for m in valid_masks if m['area'] <= MAX_PILL_AREA]
-            valid_masks = [m for m in valid_masks if m['predicted_iou'] >= MIN_IOU_SCORE]
-            
-            print(f"Filtered masks for {full_image_path} in worker {os.getpid()}. Found {len(valid_masks)} valid masks.")
+            valid_masks = [
+                m for m in masks_data
+                if MIN_PILL_AREA <= m['area'] <= MAX_PILL_AREA and m['predicted_iou'] >= MIN_IOU_SCORE
+            ]
 
             if not valid_masks:
-                # print(f"Warning: No masks passed filtering for {full_image_path} in worker {os.getpid()}.") # Less verbose
+                # print(f"Warning: No masks passed initial filtering for {full_image_path}.") # Less verbose
                 return None, None, None
+            
+            print(f"Filtered masks for {full_image_path} in worker {os.getpid()}. Found {len(valid_masks)} valid masks before selecting.")
+
+            selection_pool = valid_masks # Default pool
+
+            if len(valid_masks) >= MIN_MASKS_FOR_ADJUSTMENT:
+                # Calculate median area
+                areas = [m['area'] for m in valid_masks]
+                # Ensure areas list is not empty before calculating median
+                if not areas:
+                     median_area = 0 # Or handle as an error/warning
+                else:
+                     median_area = statistics.median(areas)
+
+                # Calculate difference from median and sort
+                # Store tuples (difference, mask_dict)
+                masks_with_diff = [
+                    (abs(m['area'] - median_area), m) for m in valid_masks
+                ]
+                # Sort by difference (ascending - closest first)
+                masks_with_diff.sort(key=lambda x: x[0])
+                sorted_masks_by_closeness = [m[1] for m in masks_with_diff] # Get back list of dicts
+
+                if len(valid_masks) > TARGET_MASK_COUNT:
+                    # Too many masks: Keep the 100 closest to the median area
+                    selection_pool = sorted_masks_by_closeness[:TARGET_MASK_COUNT]
+                    # print(f"DEBUG: Reduced pool from {len(valid_masks)} to {len(selection_pool)} by keeping closest to median area {median_area}.") # Optional Debug
+
+                else: # 50 < len(valid_masks) <= 100
+                    # Too few masks (but > 50): Duplicate masks closest to median until we have 100
+                    num_to_add = TARGET_MASK_COUNT - len(valid_masks)
+                    # Get the masks to duplicate (those closest to median)
+                    masks_to_duplicate = sorted_masks_by_closeness[:num_to_add]
+                    # Create deep copies to avoid modifying original list elements if needed later
+                    duplicates = [copy.deepcopy(m) for m in masks_to_duplicate]
+                    selection_pool = valid_masks + duplicates # Combine original list with duplicates
+                    # print(f"DEBUG: Increased pool from {len(valid_masks)} to {len(selection_pool)} by duplicating {num_to_add} masks closest to median area {median_area}.") # Optional Debug
+
+
+            # 3. Select the largest mask from the final pool
+            if not selection_pool: # Safety check in case pool somehow becomes empty
+                 # print(f"Warning: Selection pool became empty for {full_image_path}.") # Less verbose
+                 return None, None, None
 
             # 2. Select the largest remaining mask
             mask_info = max(valid_masks, key=lambda x: x['area'])
@@ -244,7 +289,7 @@ class HyperspectralPatchDataset(Dataset):
             patch_tensor = patch_tensor.cpu()
             # --- End ---
             
-            print(f"Processed patch for {full_image_path} in worker {os.getpid()}.")
+            # print(f"Processed patch for {full_image_path} in worker {os.getpid()}.")
 
             # Return tensor, label, and the original chosen bbox (can still be float)
             return patch_tensor, label, mask_info['bbox'] # Return original bbox for visualization
