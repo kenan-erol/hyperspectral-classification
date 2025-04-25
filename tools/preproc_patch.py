@@ -111,13 +111,24 @@ def main(args):
     try:
         sam2 = build_sam2(model_cfg_name, sam2_checkpoint, device=device, apply_postprocessing=False)
         mask_generator = SAM2AutomaticMaskGenerator(
-                    model=sam2, points_per_side=32, points_per_batch=64,
-                    pred_iou_thresh=0.8, stability_score_thresh=0.9,
-                    stability_score_offset=1.0, box_nms_thresh=0.7,
-                    crop_n_layers=0, crop_nms_thresh = 0.7,
-                    min_mask_region_area=25, output_mode = "binary_mask",
-                    multimask_output = True,
-                )
+				model=sam2,
+				points_per_side=64,
+				points_per_batch=64,
+				pred_iou_thresh=0.9,
+				stability_score_thresh=0.92, # >0.92 for less squarish masks
+				stability_score_offset=0.5,
+				box_nms_thresh=0.55,
+				crop_n_layers=1,
+				crop_nms_thresh = 0.7,
+					crop_overlap_ratio = 512 / 1500,
+					crop_n_points_downscale_factor = 2,
+					# point_grids: Optional[List[np.ndarray]] = None,
+					# min_mask_region_area = 15.0,
+					output_mode = "binary_mask",
+					multimask_output = True,
+				min_mask_region_area=25.0,
+				use_m2m=True,
+			) # rn it is too edgy
         print("SAM2 model and generator initialized.")
     except Exception as e:
         import traceback
