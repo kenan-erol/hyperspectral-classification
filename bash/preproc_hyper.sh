@@ -20,4 +20,6 @@ python tools/preproc_patch.py \
 --learning_rate_decay 0.5 \
 --learning_rate_period 10 \
 --checkpoint_path 'hyper_checkpoints/resnet/' \
---device 'cuda'
+--device 'cuda' \
+--output_dir './data_processed_patch/' \
+--sam2_checkpoint_path './sam2/checkpoints/sam2.1_hiera_base_plus.pt'
