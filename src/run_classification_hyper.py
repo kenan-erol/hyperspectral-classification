@@ -30,8 +30,7 @@ from datasets import HyperspectralPatchDataset, collate_fn_skip_none
 
 # train: Initializes a new ClassificationModel.
 # run: (Assumed) Loads model state from a checkpoint file specified via arguments.
-# Sensibility: Expected difference between training and inference.
-# Transforms:
+# Sensibility: Expected difference between training and inference. make sure run can actually load the model state correctly.
 
 # train: Defines a transform pipeline (currently includes Normalize).
 # run: Also uses a transform variable (definition not shown in excerpt).

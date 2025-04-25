@@ -1,8 +1,8 @@
 #!/bin/bash
 
-pwd
-cd $SLURM_SUBMIT_DIR
-pwd
+# pwd
+# cd $SLURM_SUBMIT_DIR
+# pwd
 
 export CUDA_VISIBLE_DEVICES=0
 
