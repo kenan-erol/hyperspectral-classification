@@ -117,12 +117,19 @@ if __name__ == '__main__':
         # NOTE: This assumes the 'sam2/sam2/configs' dir is discoverable by Hydra.
         # If running from the project root and sam2 is installed/present, this might work.
         # Adjust config_path if needed relative to where Hydra searches.
-        hydra.initialize(config_path="../sam2/sam2/configs", version_base=None) # Adjust path if necessary
+        # hydra.initialize(config_path="../sam2/sam2/configs", version_base=None) # THIS LINE IS DUMB BC SAM2 ALR CALLS THIS BY ITSELF
         cfg = hydra.compose(config_name=model_cfg_name_rel)
         print("Hydra config loaded successfully in main process.")
     except Exception as e:
         print(f"Error: Failed to load Hydra config '{model_cfg_name_rel}': {e}")
-        print("Ensure the 'sam2/sam2/configs' directory is accessible and contains the config.")
+        # Add specific check for config not found, which might happen if sam2's init path is different than expected
+        if "Could not find config" in str(e) or "Cannot find primary config" in str(e):
+             print(f"Suggestion: Hydra initialized by 'sam2', but couldn't find '{model_cfg_name_rel}'.")
+             print("Check if the config name needs prefixing (e.g., 'sam2/configs/{model_cfg_name_rel}') or adjust path logic.")
+        elif "GlobalHydra is already initialized" in str(e):
+             print("Error: Still getting 'already initialized'. Check for other Hydra initializations.")
+        else:
+             print("An unexpected error occurred during Hydra composition.")
         exit(1)
     # --- End Hydra Config Loading ---
 
