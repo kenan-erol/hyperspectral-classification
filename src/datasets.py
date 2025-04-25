@@ -108,7 +108,25 @@ class HyperspectralPatchDataset(Dataset):
             sam2_model.eval()
             print("Model instantiated and checkpoint loaded.")
 
-            self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2_model)
+            self._worker_sam2_model = mask_generator_2 = SAM2AutomaticMaskGenerator(
+				model=sam2_model,
+				points_per_side=64,
+				points_per_batch=64,
+				pred_iou_thresh=0.9,
+				stability_score_thresh=0.92, # >0.92 for less squarish masks
+				stability_score_offset=0.5,
+				box_nms_thresh=0.55,
+				crop_n_layers=1,
+				crop_nms_thresh = 0.7,
+					crop_overlap_ratio = 512 / 1500,
+					crop_n_points_downscale_factor = 2,
+					# point_grids: Optional[List[np.ndarray]] = None,
+					# min_mask_region_area = 15.0,
+					output_mode = "binary_mask",
+					multimask_output = True,
+				min_mask_region_area=25.0,
+				use_m2m=True,
+			) # rn it is too edgy
             print(f"SAM2 initialized successfully in worker {worker_pid} on device {self.device}.")
 
         except Exception as e:
