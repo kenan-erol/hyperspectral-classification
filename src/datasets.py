@@ -243,6 +243,8 @@ class HyperspectralPatchDataset(Dataset):
 
             # 2. Select the largest remaining mask
             mask_info = max(valid_masks, key=lambda x: x['area'])
+            
+            print(f"Filtered masks for {full_image_path} in worker {os.getpid()}. Found {len(valid_masks)} valid masks after selecting.")
             # --- End Filter and Select ---
 
             bbox = mask_info['bbox'] # [x, y, w, h]
