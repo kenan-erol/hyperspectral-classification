@@ -83,16 +83,15 @@ class HyperspectralPatchDataset(Dataset):
         print(f"Initializing SAM2 in worker {worker_pid}...")
         try:
             # --- Use the passed config object ---
-            # Check if the necessary 'sam' key exists
-            if 'sam' not in self.sam2_config_name:
-                 raise KeyError("Key 'sam' not found in the provided sam2_config_name object.")
+            # Check if the necessary 'model' key exists in the config object
+            if 'model' not in self.sam2_config_name: # Check for 'model' key
+                 # Update error message for clarity
+                 raise KeyError("Key 'model' not found in the provided sam2_config_name object.")
 
-            # Build SAM2 model using the relevant part of the config
+            # Build SAM2 model using the relevant part of the config (.model)
             # Pass device string here
-            sam2 = build_sam2(self.sam2_config_name.sam, checkpoint_path=self.sam2_checkpoint_path, device=self.device)
+            sam2 = build_sam2(self.sam2_config_name.model, checkpoint_path=self.sam2_checkpoint_path, device=self.device) # Use .model attribute
             # --- build_sam2 already moves model to device and sets eval mode ---
-            # sam2.to(self.device) # Not needed if build_sam2 does it
-            # sam2.eval() # Not needed if build_sam2 does it
 
             # Create the generator
             self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
