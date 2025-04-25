@@ -71,6 +71,7 @@ def train(model,
             pass
 
         for batch, (images, labels, _) in enumerate(dataloader):
+            print('Batch={}/{}  '.format(batch + 1, len(dataloader)), end='')
 
             # TODO: Move images and labels to device
             images = images.to(device)

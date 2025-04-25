@@ -120,6 +120,7 @@ class HyperspectralPatchDataset(Dataset):
 
 
     def __getitem__(self, idx):
+        print(f"Processing index {idx} in worker {os.getpid()}...")
         # Ensure worker-specific model is initialized
         if self._worker_sam2_model is None:
             try:
@@ -142,6 +143,7 @@ class HyperspectralPatchDataset(Dataset):
 
         try:
             image = np.load(full_image_path)
+            print(f"Loaded image {full_image_path} in worker {os.getpid()}.")
             if image.ndim == 2: image = np.expand_dims(image, axis=-1)
             if image.dtype == np.float64: image = image.astype(np.float32)
             img_h, img_w, img_c = image.shape
@@ -155,6 +157,8 @@ class HyperspectralPatchDataset(Dataset):
             rgb_image_for_sam = np.stack([rgb_image_for_sam]*3, axis=-1)
 
             masks_data = self._worker_sam2_model.generate(rgb_image_for_sam)
+            
+            print(f"Generated masks for {full_image_path} in worker {os.getpid()}.")
 
             if not masks_data:
                 # print(f"Warning: No masks found for {full_image_path} in worker {os.getpid()}.") # Less verbose
@@ -167,6 +171,8 @@ class HyperspectralPatchDataset(Dataset):
             # Optional: Add more filters (e.g., max area, score threshold)
             valid_masks = [m for m in valid_masks if m['area'] <= MAX_PILL_AREA]
             valid_masks = [m for m in valid_masks if m['predicted_iou'] >= MIN_IOU_SCORE]
+            
+            print(f"Filtered masks for {full_image_path} in worker {os.getpid()}. Found {len(valid_masks)} valid masks.")
 
             if not valid_masks:
                 # print(f"Warning: No masks passed filtering for {full_image_path} in worker {os.getpid()}.") # Less verbose
@@ -219,6 +225,8 @@ class HyperspectralPatchDataset(Dataset):
 
             patch_tensor = patch_tensor.cpu()
             # --- End ---
+            
+            print(f"Processed patch for {full_image_path} in worker {os.getpid()}.")
 
             # Return tensor, label, and the original chosen bbox (can still be float)
             return patch_tensor, label, mask_info['bbox'] # Return original bbox for visualization
