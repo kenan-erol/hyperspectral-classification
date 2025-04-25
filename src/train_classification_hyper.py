@@ -14,7 +14,7 @@ from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 import torch.multiprocessing as mp
 import hydra # Add hydra import
-from omegaconf import OmegaConf # Add OmegaConf import
+from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
 import matplotlib.pyplot as plt
 
@@ -119,6 +119,21 @@ if __name__ == '__main__':
     # sam2 = build_sam2(model_cfg_name, sam2_checkpoint, device=args.device, apply_postprocessing=False)
 
     # mask_generator = SAM2AutomaticMaskGenerator(sam2)
+    
+    # --- Load Hydra Config in Main Process ---
+    try:
+        # Initialize Hydra minimally to compose the config
+        # NOTE: This assumes the 'sam2/sam2/configs' dir is discoverable by Hydra.
+        # If running from the project root and sam2 is installed/present, this might work.
+        # Adjust config_path if needed relative to where Hydra searches.
+        hydra.initialize(config_path="../sam2/sam2/configs", version_base=None) # Adjust path if necessary
+        cfg = hydra.compose(config_name=model_cfg_name)
+        print("Hydra config loaded successfully in main process.")
+    except Exception as e:
+        print(f"Error: Failed to load Hydra config '{model_cfg_name}': {e}")
+        print("Ensure the 'sam2/sam2/configs' directory is accessible and contains the config.")
+        exit(1)
+    # --- End Hydra Config Loading ---
 
     transform = transforms.Compose([
         # transforms.ToTensor(), # Convert numpy array to tensor
@@ -206,7 +221,7 @@ if __name__ == '__main__':
         train_samples,
         # Pass SAM2 config details instead of the model
         sam2_checkpoint_path=args.sam2_checkpoint_path, # Path to weights
-        sam2_config_name=model_cfg_name,     # Name for Hydra (e.g., 'configs/sam2.1/sam2.1_hiera_b+')
+        sam2_config_name=cfg,     # Name for Hydra (e.g., 'configs/sam2.1/sam2.1_hiera_b+')
         device=str(args.device),               # Device string ('cuda' or 'cpu')
         num_patches_per_image=args.num_patches_per_image,
         transform=transform,              # The corrected transform pipeline

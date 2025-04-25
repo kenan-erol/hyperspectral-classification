@@ -13,7 +13,7 @@ from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 import hydra # Add hydra import
-from omegaconf import OmegaConf # Add OmegaConf import
+from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
 class HyperspectralPatchDataset(Dataset):
     def __init__(self,
@@ -21,7 +21,7 @@ class HyperspectralPatchDataset(Dataset):
                  samples,
                  # Remove sam2_model parameter
                  sam2_checkpoint_path, # Add path
-                 sam2_config_name,     # Add config name
+                 sam2_config_name: DictConfig,     # Add config name
                  device,               # Add device string
                  num_patches_per_image=5,
                  transform=None,
@@ -79,17 +79,30 @@ class HyperspectralPatchDataset(Dataset):
 
     def _initialize_worker_sam2(self):
         """Initializes SAM2 model within the worker process."""
-        print(f"Initializing SAM2 in worker {os.getpid()}...")
-        # Load SAM2 config using Hydra
-        cfg = hydra.compose(config_name=self.sam2_config_name)
-        # Build SAM2 model
-        sam2 = build_sam2(cfg.sam, checkpoint_path=self.sam2_checkpoint_path)
-        # Move model to the specified device
-        sam2.to(self.device)
-        sam2.eval()
-        # Create the generator
-        self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
-        print(f"SAM2 initialized in worker {os.getpid()} on device {self.device}.")
+        worker_pid = os.getpid() # Get worker PID for logging
+        print(f"Initializing SAM2 in worker {worker_pid}...")
+        try:
+            # --- Use the passed config object ---
+            # Check if the necessary 'sam' key exists
+            if 'sam' not in self.sam2_cfg:
+                 raise KeyError("Key 'sam' not found in the provided sam2_cfg object.")
+
+            # Build SAM2 model using the relevant part of the config
+            # Pass device string here
+            sam2 = build_sam2(self.sam2_cfg.sam, checkpoint_path=self.sam2_checkpoint_path, device=self.device)
+            # --- build_sam2 already moves model to device and sets eval mode ---
+            # sam2.to(self.device) # Not needed if build_sam2 does it
+            # sam2.eval() # Not needed if build_sam2 does it
+
+            # Create the generator
+            self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
+            print(f"SAM2 initialized successfully in worker {worker_pid} on device {self.device}.")
+        except Exception as e:
+             print(f"!!! ERROR initializing SAM2 in worker {worker_pid}: {e}")
+             # Optionally re-raise or ensure __getitem__ handles this failure
+             # import traceback
+             # traceback.print_exc()
+             raise e # Re-raise to make the failure clear
 
 
     def __getitem__(self, idx):
