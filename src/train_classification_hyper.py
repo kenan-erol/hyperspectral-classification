@@ -223,7 +223,7 @@ if __name__ == '__main__':
         args.data_dir,
         train_samples,
         sam2_checkpoint_path=args.sam2_checkpoint_path,
-        sam2_config_name=cfg.model, # Pass the loaded config object (using original name)
+        sam2_model_config=cfg.model, # Pass the loaded config object (using original name)
         device=str(args.device), # Pass device string
         num_patches_per_image=args.num_patches_per_image,
         # --- Pass transform parameters ---

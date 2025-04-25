@@ -34,7 +34,7 @@ class HyperspectralPatchDataset(Dataset):
         self.original_samples = samples
         self.samples_for_iteration = self._expand_samples(samples, num_patches_per_image)
         self.sam2_checkpoint_path = sam2_checkpoint_path
-        self.sam2_config_name = sam2_model_config # Store the config object
+        self.sam2_model_config = sam2_model_config # Store the config object
         self.device = device # Store device string (e.g., 'cuda')
         self._worker_sam2_model = None
         self.num_patches_per_image = num_patches_per_image
