@@ -17,6 +17,7 @@ import hydra # Add hydra import
 from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches # <-- Import patches
 
 from datasets import HyperspectralPatchDataset, collate_fn_skip_none
 
@@ -140,6 +141,10 @@ if __name__ == '__main__':
         # Add other transforms if needed, e.g., normalization
         transforms.Normalize(mean=[0.5]*args.num_channels, std=[0.5]*args.num_channels), # Normalize to [0, 1] range
     ])
+    
+    transform_mean = [0.5] * args.num_channels if args.num_channels > 0 else None
+    transform_std = [0.5] * args.num_channels if args.num_channels > 0 else None
+
 
     print("Loading image list and labels...")
     all_samples = []
@@ -219,12 +224,15 @@ if __name__ == '__main__':
     train_dataset = HyperspectralPatchDataset(
         args.data_dir,
         train_samples,
-        # Pass SAM2 config details instead of the model
-        sam2_checkpoint_path=args.sam2_checkpoint_path, # Path to weights
-        sam2_config_name=cfg,     # Name for Hydra (e.g., 'configs/sam2.1/sam2.1_hiera_b+')
-        device=str(args.device),               # Device string ('cuda' or 'cpu')
+        sam2_checkpoint_path=args.sam2_checkpoint_path,
+        sam2_config_name=cfg, # Pass the loaded config object (using original name)
+        device=str(args.device), # Pass device string
         num_patches_per_image=args.num_patches_per_image,
-        transform=transform,              # The corrected transform pipeline
+        # --- Pass transform parameters ---
+        transform_mean=transform_mean,
+        transform_std=transform_std,
+        num_channels=args.num_channels,
+        # --- End transform parameters ---
         target_size=(args.patch_size, args.patch_size)
     )
     print(f"Training dataset size: {len(train_dataset)} patches")
@@ -234,84 +242,101 @@ if __name__ == '__main__':
         train_dataset,
         batch_size=args.n_batch,
         shuffle=True,
-        collate_fn=collate_fn_skip_none,
-        num_workers=4,
-        pin_memory=True if args.device == 'cuda' else False,
-        drop_last=True
+        num_workers=4, # As specified in log
+        pin_memory=True, # Good practice with CUDA
+        drop_last=True, # As specified in log comparison
+        collate_fn=collate_fn_skip_none # Keep this to handle None returns
     )
     print("DataLoader created.")
 
     print("Saving a few sample patches to files...")
-    num_samples_to_save = 5
-    save_dir = os.path.join(args.checkpoint_path, "sample_patches") # Directory to save patches
+    num_samples_to_save = 5 # Or get from args
+    save_dir = os.path.join(args.checkpoint_dir, "sample_patches_with_bbox") # Changed dir name
     os.makedirs(save_dir, exist_ok=True)
-    print(f"Saving patches to: {save_dir}")
+    print(f"Saving sample patches and visualizations to: {save_dir}")
 
     saved_count = 0
-    # Try to get a few more indices in case some samples fail in __getitem__
-    vis_indices = random.sample(range(len(train_dataset)), min(num_samples_to_save * 3, len(train_dataset)))
+    vis_indices = random.sample(range(len(train_dataset)), min(num_samples_to_save * 5, len(train_dataset)))
     idx_iter = iter(vis_indices)
+
+    # Helper function to create displayable RGB from HSI (using mean)
+    def hsi_to_rgb_display(hsi_image):
+        # ... (keep the helper function as defined before) ...
+        if hsi_image.ndim == 2: hsi_image = np.expand_dims(hsi_image, axis=-1)
+        img_h, img_w, img_c = hsi_image.shape
+        if img_c == 0: return np.zeros((img_h, img_w, 3), dtype=np.uint8)
+
+        display_img = np.mean(hsi_image, axis=2)
+        min_val, max_val = np.min(display_img), np.max(display_img)
+        if max_val > min_val:
+            display_img = ((display_img - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+        else:
+            display_img = np.zeros((img_h, img_w), dtype=np.uint8)
+        return np.stack([display_img]*3, axis=-1) # Stack to 3 channels
+
 
     while saved_count < num_samples_to_save:
         try:
             idx = next(idx_iter)
-            # Retrieve original path info for filename (optional but helpful)
-            original_image_path, _ = train_dataset.samples_for_iteration[idx] # Access internal list
-            base_filename = os.path.splitext(os.path.basename(original_image_path))[0]
+            relative_path, _ = train_dataset.samples_for_iteration[idx]
+            full_image_path = os.path.join(args.data_dir, relative_path)
+            base_filename = os.path.splitext(os.path.basename(relative_path))[0]
 
-            patch_tensor, label = train_dataset[idx]
+            # Get patch, label, and the bbox used for cropping
+            patch_tensor, label, bbox = train_dataset[idx] # Unpack bbox
 
-            if patch_tensor is None: # Skip if __getitem__ returned None
+            # Skip if dataset __getitem__ failed
+            if patch_tensor is None or bbox is None:
+                 print(f"Skipping visualization for index {idx} due to error in __getitem__.")
                  continue
 
-            # Convert tensor back to numpy (CHW -> HWC) for display/saving
-            patch_np = patch_tensor.numpy().transpose((1, 2, 0))
-    
-            # Select bands to display (e.g., first 3, or specific RGB indices)
-            # Option 1: First 3 channels
-            # display_patch = patch_np[:, :, :3]
-    
-            # Option 2: Specific indices (ensure they exist)
-            # Example: R=50, G=30, B=10 (adjust if your channel count is different)
-            if patch_np.shape[2] >= 50: # Check if enough channels exist
-                 display_patch = patch_np[:, :, [50, 30, 10]] # Example indices
-            else: # Fallback: Use first 3 or mean
-                 display_patch = patch_np[:, :, :min(3, patch_np.shape[2])]
-                 if display_patch.shape[2] == 1: # If only one channel, make it grayscale RGB
-                     display_patch = np.concatenate([display_patch]*3, axis=-1)
-                 elif display_patch.shape[2] == 2: # Handle 2 channels if necessary
-                     # Example: duplicate one channel or add a zero channel
-                     display_patch = np.concatenate([display_patch, display_patch[:,:,:1]], axis=-1)
-    
-            # Normalize for display/saving (0-1 range is good for imsave)
-            min_val = np.min(display_patch)
-            max_val = np.max(display_patch)
-            if max_val > min_val:
-                 display_patch = (display_patch - min_val) / (max_val - min_val)
-            else:
-                 display_patch = np.zeros_like(display_patch) # Handle constant image case
-            display_patch = np.clip(display_patch, 0, 1) # Ensure values are in [0, 1]
+            # --- Save the patch .npy file ---
+            # Move tensor to CPU for numpy conversion and saving
+            patch_np_final = patch_tensor.cpu().numpy().transpose((1, 2, 0)) # CHW -> HWC
+            patch_filename = f"{base_filename}_patch_{idx}_label{label}.npy"
+            output_patch_path = os.path.join(save_dir, patch_filename)
+            np.save(output_patch_path, patch_np_final)
+            # --- End saving patch .npy ---
 
-            # Construct save path
-            save_filename = f"sample_{saved_count}_idx{idx}_label{label}_{base_filename}.png"
-            save_path = os.path.join(save_dir, save_filename)
+            # --- Create and save the visualization ---
+            try:
+                original_image_np = np.load(full_image_path)
+                if original_image_np.ndim == 2: original_image_np = np.expand_dims(original_image_np, axis=-1)
+                if original_image_np.dtype == np.float64: original_image_np = original_image_np.astype(np.float32)
+                original_image_display = hsi_to_rgb_display(original_image_np)
 
-            # Save the image using matplotlib.pyplot.imsave
-            plt.imsave(save_path, display_patch)
+                fig, ax = plt.subplots(1, 1, figsize=(8, 8))
+                ax.imshow(original_image_display)
+                ax.set_title(f"Original: {os.path.basename(relative_path)}\nIndex: {idx}, Label: {label}")
+                ax.axis('off')
+                
+                # Add the bounding box (use the potentially float values returned for accuracy)
+                x, y, w, h = bbox
+                rect = patches.Rectangle((x, y), w, h, linewidth=2, edgecolor='r', facecolor='none')
+                ax.add_patch(rect)
 
-            saved_count += 1
+                vis_filename = f"{base_filename}_vis_{idx}_label{label}.png"
+                output_vis_path = os.path.join(save_dir, vis_filename)
+                plt.savefig(output_vis_path, bbox_inches='tight')
+                plt.close(fig)
+
+                saved_count += 1
+            except FileNotFoundError:
+                 print(f"Error: Original image file not found for visualization: {full_image_path}")
+            except Exception as vis_e:
+                 print(f"Error creating visualization for index {idx}: {vis_e}")
+                 plt.close(fig) # Ensure figure is closed even on error
+            # --- End visualization ---
 
         except StopIteration:
-             print(f"Warning: Ran out of indices while trying to save {num_samples_to_save} samples.")
-             break # Exit loop if we run out of indices
-        except Exception as e:
-             # Print error and original path for context
-             try:
-                 failed_path = train_dataset.samples_for_iteration[idx][0]
-             except:
-                 failed_path = "unknown"
-             print(f"Error saving sample patch from index {idx} (orig path: {failed_path}): {e}")
-             # Continue to try next index
+            print(f"Warning: Ran out of indices while trying to save {num_samples_to_save} samples.")
+            break
+        except Exception as loop_e:
+            print(f"Error in visualization loop for index {idx}: {loop_e}")
+            continue
+
+    print(f"Finished saving {saved_count} sample patches and visualizations.")
+    # --- End Save Sample Patches ---
 
     # Remove the plt.show() and related figure setup
     # plt.tight_layout() # Not needed
