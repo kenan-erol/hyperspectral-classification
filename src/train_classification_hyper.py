@@ -117,7 +117,7 @@ if __name__ == '__main__':
         # NOTE: This assumes the 'sam2/sam2/configs' dir is discoverable by Hydra.
         # If running from the project root and sam2 is installed/present, this might work.
         # Adjust config_path if needed relative to where Hydra searches.
-        # hydra.initialize(config_path="../sam2/sam2/configs", version_base=None) # Adjust path if necessary
+        hydra.initialize(config_path="../sam2/sam2/configs", version_base=None) # Adjust path if necessary
         cfg = hydra.compose(config_name=model_cfg_name_rel)
         print("Hydra config loaded successfully in main process.")
     except Exception as e:
