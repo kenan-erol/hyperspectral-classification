@@ -15,8 +15,8 @@ from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 SAM2_CHECKPOINT = "./sam2/checkpoints/sam2.1_hiera_base_plus.pt" # Or your checkpoint
 MODEL_CFG_REL = "sam2.1/sam2.1_hiera_b+" # Relative config name used in training
 CONFIG_DIR_ABS = os.path.abspath("./sam2/sam2/configs") # Absolute path to sam2 configs dir
-DATA_DIR = "./data_processed/drop-4-npy/" # Path to your .npy files
-LABEL_FILE = "./data_processed/drop-4-npy/labels.txt" # Path to your labels file
+DATA_DIR = "./data_processed/" # Path to your .npy files
+LABEL_FILE = "labels.txt" # Path to your labels file
 NUM_IMAGES_TO_ANALYZE = 20
 OUTPUT_VIS_DIR = "./mask_analysis_vis"
 # --- End Configuration ---
@@ -60,15 +60,32 @@ if __name__ == "__main__":
     print("Loading SAM2 model...")
     cfg = None
     try:
-        with hydra.initialize_config_dir(config_dir=CONFIG_DIR_ABS, version_base=None):
-            full_config_name = f"configs/{MODEL_CFG_REL}"
-            cfg = hydra.compose(config_name=full_config_name)
+        full_config_name = f"configs/{MODEL_CFG_REL}"
+        cfg = hydra.compose(config_name=full_config_name)
         print("Hydra config loaded.")
         sam2_model = hydra.utils.instantiate(cfg.model)
         _load_checkpoint(sam2_model, SAM2_CHECKPOINT)
         sam2_model.to(device)
         sam2_model.eval()
-        mask_generator = SAM2AutomaticMaskGenerator(sam2_model)
+        mask_generator = SAM2AutomaticMaskGenerator(
+				model=sam2_model,
+				points_per_side=64,
+				points_per_batch=64,
+				pred_iou_thresh=0.9,
+				stability_score_thresh=0.92, # >0.92 for less squarish masks
+				stability_score_offset=0.5,
+				box_nms_thresh=0.55,
+				crop_n_layers=1,
+				crop_nms_thresh = 0.7,
+					crop_overlap_ratio = 512 / 1500,
+					crop_n_points_downscale_factor = 2,
+					# point_grids: Optional[List[np.ndarray]] = None,
+					# min_mask_region_area = 15.0,
+					output_mode = "binary_mask",
+					multimask_output = True,
+				min_mask_region_area=25.0,
+				use_m2m=True,
+			) # rn it is too edgy
         print("SAM2 model and generator initialized.")
     except Exception as e:
         print(f"Error initializing SAM2: {e}")
@@ -79,12 +96,38 @@ if __name__ == "__main__":
     image_paths = []
     try:
         with open(LABEL_FILE, 'r') as f:
-            for line in f:
-                parts = line.strip().split()
-                if len(parts) == 2:
-                    image_paths.append(parts[0])
+            for i, line in enumerate(f): # Add line number
+                line = line.strip()
+                if not line: continue # Skip empty lines
+
+                try:
+                    # --- Use robust splitting logic ---
+                    last_space_idx = line.rfind(' ')
+                    if last_space_idx == -1:
+                        raise ValueError("No space found to separate path and label.")
+
+                    relative_path = line[:last_space_idx].strip()
+                    label_str = line[last_space_idx:].strip()
+
+                    if not relative_path or not label_str:
+                        raise ValueError("Empty path or label after split.")
+                    # --- End robust splitting logic ---
+
+                    # Optional: Check if label is numeric if needed, but we only need the path here
+                    # label = int(label_str)
+
+                    # We only need the path for analysis
+                    image_paths.append(relative_path)
+                    # print(f"  Line {i+1}: Found path '{relative_path}'") # Optional debug print
+
+                except ValueError as e:
+                     print(f"Warning: Skipping malformed line {i+1} in {LABEL_FILE}: '{line}' - Reason: {e}")
+
     except FileNotFoundError:
         print(f"Error: Label file not found at {LABEL_FILE}")
+        exit(1)
+    except Exception as e:
+        print(f"Error reading label file {LABEL_FILE}: {e}")
         exit(1)
 
     if not image_paths:
@@ -131,15 +174,23 @@ if __name__ == "__main__":
             all_areas.extend(areas)
             print(f"  Generated {len(masks_data)} masks. Areas: {sorted(areas)}")
 
+            # --- Modify Filename Generation ---
+            # Create a unique base name from the relative path
+            base_name_from_path = os.path.splitext(rel_path)[0].replace(os.sep, '_') # Replace '/' or '\' with '_'
+            vis_filename = os.path.join(OUTPUT_VIS_DIR, f"{base_name_from_path}_masks.png")
+            # --- End Modify Filename Generation ---
+
+
             # Save visualization
             plt.figure(figsize=(10, 10))
             plt.imshow(image_rgb_display)
             show_anns_with_area(masks_data, plt.gca())
             plt.title(f"{os.path.basename(rel_path)}\n{len(masks_data)} masks generated")
             plt.axis('off')
-            vis_filename = os.path.join(OUTPUT_VIS_DIR, f"{os.path.splitext(os.path.basename(rel_path))[0]}_masks.png")
+            # Use the new unique filename
             plt.savefig(vis_filename, bbox_inches='tight')
             plt.close()
+            # print(f"  Visualization saved to: {vis_filename}") # Optional: uncomment to confirm save path
 
         except FileNotFoundError:
             print(f"  Error: File not found: {full_path}")
