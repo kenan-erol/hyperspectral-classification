@@ -240,7 +240,7 @@ if __name__ == '__main__':
         train_dataset,
         batch_size=args.n_batch,
         shuffle=True,
-        num_workers=4, # As specified in log
+        num_workers=0, # Removed mp for now
         pin_memory=True, # Good practice with CUDA
         drop_last=True, # As specified in log comparison
         collate_fn=collate_fn_skip_none # Keep this to handle None returns
@@ -253,9 +253,31 @@ if __name__ == '__main__':
     os.makedirs(save_dir, exist_ok=True)
     print(f"Saving sample patches and visualizations to: {save_dir}")
 
+    # --- Clear existing files in the directory ---
+    print(f"Clearing existing files in {save_dir}...")
+    for filename in os.listdir(save_dir):
+        file_path = os.path.join(save_dir, filename)
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                os.unlink(file_path)
+            # If you also need to remove subdirectories, uncomment the following lines
+            # import shutil
+            # elif os.path.isdir(file_path):
+            #     shutil.rmtree(file_path)
+        except Exception as e:
+            print(f'Failed to delete {file_path}. Reason: {e}')
+    # --- End clearing files ---
+
     saved_count = 0
-    vis_indices = random.sample(range(len(train_dataset)), min(num_samples_to_save * 5, len(train_dataset)))
-    idx_iter = iter(vis_indices)
+    # Ensure enough indices are sampled if the dataset is small
+    sample_pool_size = min(num_samples_to_save * 5, len(train_dataset))
+    if len(train_dataset) > 0: # Avoid sampling from empty range
+        vis_indices = random.sample(range(len(train_dataset)), sample_pool_size)
+        idx_iter = iter(vis_indices)
+    else:
+        print("Warning: Training dataset is empty, cannot save samples.")
+        idx_iter = iter([]) # Create an empty iterator
+
 
     # Helper function to create displayable RGB from HSI (using mean)
     def hsi_to_rgb_display(hsi_image):
@@ -285,8 +307,8 @@ if __name__ == '__main__':
 
             # Skip if dataset __getitem__ failed
             if patch_tensor is None or bbox is None:
-                 print(f"Skipping visualization for index {idx} due to error in __getitem__.")
-                 continue
+                print(f"Skipping visualization for index {idx} due to error in __getitem__.")
+                continue
 
             # --- Save the patch .npy file ---
             # Move tensor to CPU for numpy conversion and saving
@@ -320,10 +342,10 @@ if __name__ == '__main__':
 
                 saved_count += 1
             except FileNotFoundError:
-                 print(f"Error: Original image file not found for visualization: {full_image_path}")
+                print(f"Error: Original image file not found for visualization: {full_image_path}")
             except Exception as vis_e:
-                 print(f"Error creating visualization for index {idx}: {vis_e}")
-                 plt.close(fig) # Ensure figure is closed even on error
+                print(f"Error creating visualization for index {idx}: {vis_e}")
+                plt.close(fig) # Ensure figure is closed even on error
             # --- End visualization ---
 
         except StopIteration:

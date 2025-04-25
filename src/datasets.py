@@ -213,6 +213,11 @@ class HyperspectralPatchDataset(Dataset):
                      print(f"Transform TypeError in worker {os.getpid()} for index {idx}: {te}. Input tensor shape: {patch_tensor.shape}, dtype: {patch_tensor.dtype}, device: {patch_tensor.device}")
                      raise te # Re-raise
 
+            # --- ADD THIS LINE ---
+            # Ensure the final tensor is on the CPU before returning
+            patch_tensor = patch_tensor.cpu()
+            # --- END ADDITION ---
+            
             # Return tensor, label, and the original chosen bbox (can still be float)
             return patch_tensor, label, mask_info['bbox'] # Return original bbox for visualization
 
