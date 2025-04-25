@@ -22,4 +22,5 @@ python tools/preproc_patch.py \
 --checkpoint_path 'hyper_checkpoints/resnet/' \
 --device 'cuda' \
 --output_dir './data_processed_patch/' \
---sam2_checkpoint_path './sam2/checkpoints/sam2.1_hiera_base_plus.pt'
+--sam2_checkpoint_path './sam2/checkpoints/sam2.1_hiera_base_plus.pt' \
+--max_images 10
