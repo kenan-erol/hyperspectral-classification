@@ -21,7 +21,7 @@ class HyperspectralPatchDataset(Dataset):
                  data_dir,
                  samples,
                  sam2_checkpoint_path,
-                 sam2_config_name: DictConfig, # Keep original name based on previous discussion
+                 sam2_model_config: DictConfig, # Keep original name based on previous discussion
                  device,
                  num_patches_per_image=5,
                  # --- Accept transform parameters ---
@@ -34,7 +34,7 @@ class HyperspectralPatchDataset(Dataset):
         self.original_samples = samples
         self.samples_for_iteration = self._expand_samples(samples, num_patches_per_image)
         self.sam2_checkpoint_path = sam2_checkpoint_path
-        self.sam2_config_name = sam2_config_name # Store the config object
+        self.sam2_config_name = sam2_model_config # Store the config object
         self.device = device # Store device string (e.g., 'cuda')
         self._worker_sam2_model = None
         self.num_patches_per_image = num_patches_per_image
@@ -88,47 +88,30 @@ class HyperspectralPatchDataset(Dataset):
         worker_pid = os.getpid() # Get worker PID for logging
         print(f"Initializing SAM2 in worker {worker_pid}...")
         try:
-            # --- Use the passed config object ---
-            # Check if the necessary 'model' key exists in the config object
-            if 'model' not in self.sam2_config_name: # Check for 'model' key
-                 # Update error message for clarity
-                 raise KeyError("Key 'model' not found in the provided sam2_config_name object.")
+            # --- Use the specific model config ---
+            # No need to check for 'model' key here, as we assume sam2_model_config IS the model part
+            print(f"Instantiating model defined by: {self.sam2_model_config.get('_target_', 'N/A')}")
+            sam2_model = hydra.utils.instantiate(self.sam2_model_config) # Use the passed model config directly
+            # --- End config change ---
 
-            # # Build SAM2 model using the relevant part of the config (.model)
-            # # Pass device string here
-            # sam2 = build_sam2(self.sam2_config_name.model, checkpoint_path=self.sam2_checkpoint_path, device=self.device) # Use .model attribute
-            # # --- build_sam2 already moves model to device and sets eval mode ---
-
-            # # Create the generator
-            # self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
-            # print(f"SAM2 initialized successfully in worker {worker_pid} on device {self.device}.")
-        # --- Directly instantiate the model using hydra.utils ---
-            print(f"Instantiating model defined by: {self.sam2_config_name.model.get('_target_', 'N/A')}")
-            # Instantiate the base model structure from the config part
-            sam2_model = hydra.utils.instantiate(self.sam2_config_name.model)
-
-            # Load the checkpoint using the internal helper function
             if self.sam2_checkpoint_path:
                 print(f"Loading checkpoint into model: {self.sam2_checkpoint_path}")
                 _load_checkpoint(sam2_model, self.sam2_checkpoint_path)
             else:
                 print("Warning: No SAM2 checkpoint path provided for worker initialization.")
 
-            # Move model to device and set to eval mode
             sam2_model.to(self.device)
             sam2_model.eval()
             print("Model instantiated and checkpoint loaded.")
-            # --- End direct instantiation ---
 
-            # Create the generator using the instantiated model
             self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2_model)
             print(f"SAM2 initialized successfully in worker {worker_pid} on device {self.device}.")
 
         except Exception as e:
              print(f"!!! ERROR initializing SAM2 in worker {worker_pid}: {e}")
-             import traceback # Uncomment for debugging
-             traceback.print_exc() # Uncomment for debugging
-             raise e # Re-raise to make the failure clear in the main process
+             import traceback
+             traceback.print_exc()
+             raise e
 
 
 

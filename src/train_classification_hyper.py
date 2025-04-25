@@ -89,33 +89,23 @@ if __name__ == '__main__':
     #model_cfg = "/configs/sam2.1/sam2.1_hiera_l.yaml" # Assuming this config path is correct
 
     base_config_name = "configs" # <--- Base directory name within the sam2 package
+    
+    model_cfg_name_rel = None
+    sam2_checkpoint_basename = os.path.basename(args.sam2_checkpoint_path)
 
-    if "sam2.1_hiera_tiny" in os.path.basename(sam2_checkpoint):
-        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_t.yaml")
-    elif "sam2.1_hiera_small" in os.path.basename(sam2_checkpoint):
-        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_s.yaml")
-    elif "sam2.1_hiera_base_plus" in os.path.basename(sam2_checkpoint):
-        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_b+.yaml") # Correct name for Hydra
-    elif "sam2.1_hiera_large" in os.path.basename(sam2_checkpoint):
-        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_l.yaml") # Correct name for Hydra ??
-    # Add older sam2 checkpoints if needed
-    elif "sam2_hiera_tiny" in os.path.basename(sam2_checkpoint):
-         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_t.yaml")
-    elif "sam2_hiera_small" in os.path.basename(sam2_checkpoint):
-         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_s.yaml")
-    elif "sam2_hiera_base_plus" in os.path.basename(sam2_checkpoint):
-         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_b+.yaml")
-    elif "sam2_hiera_large" in os.path.basename(sam2_checkpoint):
-         model_cfg_name = os.path.join(base_config_name, "sam2/sam2_hiera_l.yaml")
+    if "sam2.1_hiera_tiny" in sam2_checkpoint_basename:
+        model_cfg_name_rel = "sam2.1/sam2.1_hiera_t" # Relative path without .yaml
+    elif "sam2.1_hiera_small" in sam2_checkpoint_basename:
+        model_cfg_name_rel = "sam2.1/sam2.1_hiera_s"
+    elif "sam2.1_hiera_base_plus" in sam2_checkpoint_basename:
+        model_cfg_name_rel = "sam2.1/sam2.1_hiera_b+"
+    elif "sam2.1_hiera_large" in sam2_checkpoint_basename:
+        model_cfg_name_rel = "sam2.1/sam2.1_hiera_l"
     else:
-        print(f"Warning: Could not determine config name for checkpoint {sam2_checkpoint}. Using default large config.")
-        model_cfg_name = os.path.join(base_config_name, "sam2.1/sam2.1_hiera_l.yaml") # Default if unsure
+        print(f"Warning: Could not determine specific config name for {args.sam2_checkpoint_path}. Using default.")
+        model_cfg_name_rel = "sam2.1/sam2.1_hiera_l" # Defaulting to large
 
-    # Remove the '.yaml' extension for Hydra's compose function
-    model_cfg_name = model_cfg_name.replace(".yaml", "")
-
-    print(f"Using SAM2 checkpoint: {sam2_checkpoint}")
-    print(f"Using SAM2 config name for Hydra: {model_cfg_name}")
+    print(f"Using SAM2 config name for Hydra: {model_cfg_name_rel}")
 
     # sam2 = build_sam2(model_cfg_name, sam2_checkpoint, device=args.device, apply_postprocessing=False)
 
@@ -128,19 +118,19 @@ if __name__ == '__main__':
         # If running from the project root and sam2 is installed/present, this might work.
         # Adjust config_path if needed relative to where Hydra searches.
         # hydra.initialize(config_path="../sam2/sam2/configs", version_base=None) # Adjust path if necessary
-        cfg = hydra.compose(config_name=model_cfg_name)
+        cfg = hydra.compose(config_name=model_cfg_name_rel)
         print("Hydra config loaded successfully in main process.")
     except Exception as e:
-        print(f"Error: Failed to load Hydra config '{model_cfg_name}': {e}")
+        print(f"Error: Failed to load Hydra config '{model_cfg_name_rel}': {e}")
         print("Ensure the 'sam2/sam2/configs' directory is accessible and contains the config.")
         exit(1)
     # --- End Hydra Config Loading ---
 
-    transform = transforms.Compose([
-        # transforms.ToTensor(), # Convert numpy array to tensor
-        # Add other transforms if needed, e.g., normalization
-        transforms.Normalize(mean=[0.5]*args.num_channels, std=[0.5]*args.num_channels), # Normalize to [0, 1] range
-    ])
+    # transform = transforms.Compose([
+    #     # transforms.ToTensor(), # Convert numpy array to tensor
+    #     # Add other transforms if needed, e.g., normalization
+    #     transforms.Normalize(mean=[0.5]*args.num_channels, std=[0.5]*args.num_channels), # Normalize to [0, 1] range
+    # ])
     
     transform_mean = [0.5] * args.num_channels if args.num_channels > 0 else None
     transform_std = [0.5] * args.num_channels if args.num_channels > 0 else None
@@ -225,7 +215,7 @@ if __name__ == '__main__':
         args.data_dir,
         train_samples,
         sam2_checkpoint_path=args.sam2_checkpoint_path,
-        sam2_config_name=cfg, # Pass the loaded config object (using original name)
+        sam2_config_name=cfg.model, # Pass the loaded config object (using original name)
         device=str(args.device), # Pass device string
         num_patches_per_image=args.num_patches_per_image,
         # --- Pass transform parameters ---
@@ -251,7 +241,7 @@ if __name__ == '__main__':
 
     print("Saving a few sample patches to files...")
     num_samples_to_save = 5 # Or get from args
-    save_dir = os.path.join(args.checkpoint_dir, "sample_patches_with_bbox") # Changed dir name
+    save_dir = os.path.join(args.checkpoint_path, "sample_patches_with_bbox") # Changed dir name
     os.makedirs(save_dir, exist_ok=True)
     print(f"Saving sample patches and visualizations to: {save_dir}")
 
