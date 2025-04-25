@@ -13,6 +13,8 @@ from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
 import torch.multiprocessing as mp
+import hydra # Add hydra import
+from omegaconf import OmegaConf # Add OmegaConf import
 
 import matplotlib.pyplot as plt
 
@@ -114,13 +116,14 @@ if __name__ == '__main__':
     print(f"Using SAM2 checkpoint: {sam2_checkpoint}")
     print(f"Using SAM2 config name for Hydra: {model_cfg_name}")
 
-    sam2 = build_sam2(model_cfg_name, sam2_checkpoint, device=args.device, apply_postprocessing=False)
+    # sam2 = build_sam2(model_cfg_name, sam2_checkpoint, device=args.device, apply_postprocessing=False)
 
-    mask_generator = SAM2AutomaticMaskGenerator(sam2)
+    # mask_generator = SAM2AutomaticMaskGenerator(sam2)
 
     transform = transforms.Compose([
-        transforms.ToTensor(), # Convert numpy array to tensor
+        # transforms.ToTensor(), # Convert numpy array to tensor
         # Add other transforms if needed, e.g., normalization
+        transforms.Normalize(mean=[0.5]*args.num_channels, std=[0.5]*args.num_channels), # Normalize to [0, 1] range
     ])
 
     print("Loading image list and labels...")
@@ -201,9 +204,12 @@ if __name__ == '__main__':
     train_dataset = HyperspectralPatchDataset(
         args.data_dir,
         train_samples,
-        sam2_model=mask_generator,  # Pass the initialized model
+        # Pass SAM2 config details instead of the model
+        sam2_checkpoint_path=args.sam2_checkpoint_path, # Path to weights
+        sam2_config_name=model_cfg_name,     # Name for Hydra (e.g., 'configs/sam2.1/sam2.1_hiera_b+')
+        device=str(args.device),               # Device string ('cuda' or 'cpu')
         num_patches_per_image=args.num_patches_per_image,
-        transform=transform,
+        transform=transform,              # The corrected transform pipeline
         target_size=(args.patch_size, args.patch_size)
     )
     print(f"Training dataset size: {len(train_dataset)} patches")

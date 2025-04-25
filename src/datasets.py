@@ -12,22 +12,34 @@ from classification_cnn import train
 from sam2.build_sam import build_sam2
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
+import hydra # Add hydra import
+from omegaconf import OmegaConf # Add OmegaConf import
+
 class HyperspectralPatchDataset(Dataset):
-    def __init__(self, data_dir, samples_list, sam2_model, num_patches_per_image=5, transform=None, target_size=(224, 224)):
+    def __init__(self,
+                 data_dir,
+                 samples,
+                 # Remove sam2_model parameter
+                 sam2_checkpoint_path, # Add path
+                 sam2_config_name,     # Add config name
+                 device,               # Add device string
+                 num_patches_per_image=5,
+                 transform=None,
+                 target_size=(224, 224)):
         self.data_dir = data_dir
+        self.samples_for_iteration = self._expand_samples(samples, num_patches_per_image)
+        # Store config details, not the model instance
+        self.sam2_checkpoint_path = sam2_checkpoint_path
+        self.sam2_config_name = sam2_config_name
+        self.device = device # Store device string
+        # --- Worker-specific model placeholder ---
+        self._worker_sam2_model = None
+        # -----------------------------------------
+        self.num_patches_per_image = num_patches_per_image
         self.transform = transform
         self.target_size = target_size
-        self.num_patches_per_image = num_patches_per_image
-        self.sam2 = sam2_model  # Use the passed SAM2 model
+        print(f"Dataset initialized. Total samples for iteration: {len(self.samples_for_iteration)}")
 
-        # Store the original image paths and labels provided
-        self.original_samples = samples_list
-
-        # Create multiple entries for patch sampling
-        self.samples_for_iteration = []
-        for image_path, label in self.original_samples:
-            for _ in range(self.num_patches_per_image):
-                self.samples_for_iteration.append((image_path, label))
 
     def __len__(self):
         return len(self.samples_for_iteration)
@@ -58,18 +70,43 @@ class HyperspectralPatchDataset(Dataset):
 
         return new_x, new_y, new_w, new_h
 
+    def _initialize_worker_sam2(self):
+        """Initializes SAM2 model within the worker process."""
+        print(f"Initializing SAM2 in worker {os.getpid()}...")
+        # Load SAM2 config using Hydra
+        cfg = hydra.compose(config_name=self.sam2_config_name)
+        # Build SAM2 model
+        sam2 = build_sam2(cfg.sam, checkpoint_path=self.sam2_checkpoint_path)
+        # Move model to the specified device
+        sam2.to(self.device)
+        sam2.eval()
+        # Create the generator
+        self._worker_sam2_model = SAM2AutomaticMaskGenerator(sam2)
+        print(f"SAM2 initialized in worker {os.getpid()} on device {self.device}.")
+
 
     def __getitem__(self, idx):
-        original_image_path, label = self.samples_for_iteration[idx]
-        full_path = os.path.join(self.data_dir, original_image_path)
+        # --- Initialize model if needed for this worker ---
+        if self._worker_sam2_model is None:
+            self._initialize_worker_sam2()
+        # -------------------------------------------------
+
+        if idx >= len(self.samples_for_iteration):
+             # This case should ideally not be hit if __len__ is correct
+             print(f"Warning: Index {idx} out of bounds for dataset size {len(self.samples_for_iteration)}")
+             return None
+
+        relative_path, label = self.samples_for_iteration[idx]
+        full_image_path = os.path.join(self.data_dir, relative_path)
 
         try:
-            # Load the full hyperspectral image (assuming HWC format after potential expansion)
-            image_data = np.load(full_path)
-            if image_data.ndim == 2:
-                image_data = np.expand_dims(image_data, axis=-1) # Ensure 3 dims (H, W, C)
+            # Load the full hyperspectral image
+            image = np.load(full_image_path)
+            # ... (handle ndim, dtype as before) ...
+            img_h, img_w, img_c = image.shape
 
-            img_h, img_w, img_c = image_data.shape
+            # --- Convert hyperspectral to RGB for SAM2 ---
+            # (Using mean method as example, ensure this matches preproc)
 
             # --- Convert hyperspectral to RGB for SAM2 ---
             # Option 1: Select specific bands (e.g., Red, Green, Blue indices if known)
@@ -82,74 +119,79 @@ class HyperspectralPatchDataset(Dataset):
             #     rgb_image = np.stack([rgb_image]*3, axis=-1) # Convert grayscale to 3-channel RGB
 
             # Option 2: Use mean across channels (simple grayscale representation)
-            rgb_image = np.mean(image_data, axis=2)
-            # Normalize to 0-255 for SAM2 if needed (check SAM2 input requirements)
-            rgb_image = ((rgb_image - np.min(rgb_image)) / (np.max(rgb_image) - np.min(rgb_image)) * 255).astype(np.uint8)
-            rgb_image = np.stack([rgb_image]*3, axis=-1) # Convert grayscale to 3-channel RGB
+            # rgb_image = np.mean(image_data, axis=2)
+            # # Normalize to 0-255 for SAM2 if needed (check SAM2 input requirements)
+            # rgb_image = ((rgb_image - np.min(rgb_image)) / (np.max(rgb_image) - np.min(rgb_image)) * 255).astype(np.uint8)
+            # rgb_image = np.stack([rgb_image]*3, axis=-1) # Convert grayscale to 3-channel RGB
             # --- End RGB Conversion ---
-
-
-            # --- Fix SAM2 call and result processing ---
-            # Use generate() method which expects an RGB image (HWC, uint8)
-            mask_results = self.sam2.generate(rgb_image) # Use generate()
-
-            if not mask_results:
-                print(f"Warning: No masks found for {full_path}. Using random crop.")
-                rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
-                rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                # Crop from the original hyperspectral data
-                patch = image_data[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
-                              rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
+            
+            rgb_image_for_sam = np.mean(image, axis=2)
+            min_val, max_val = np.min(rgb_image_for_sam), np.max(rgb_image_for_sam)
+            if max_val > min_val:
+                rgb_image_for_sam = ((rgb_image_for_sam - min_val) / (max_val - min_val) * 255).astype(np.uint8)
             else:
-                # Select a random mask result (each is a dictionary)
-                selected_mask_info = random.choice(mask_results)
-                # Get the bounding box ('bbox' is in XYWH format)
-                bbox_xywh = selected_mask_info['bbox']
-                # Adjust the bounding box
-                adj_x, adj_y, adj_w, adj_h = self._adjust_bbox(bbox_xywh, image_data.shape)
-                # Crop from the original hyperspectral data
-                patch = image_data[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :]
-            # --- End Fix ---
+                rgb_image_for_sam = np.zeros((img_h, img_w), dtype=np.uint8)
+            rgb_image_for_sam = np.stack([rgb_image_for_sam]*3, axis=-1)
 
-            if patch.size == 0 or patch.shape[0] == 0 or patch.shape[1] == 0: # More robust empty check
-                print(f"Warning: Empty patch generated for {full_path} after cropping. Using random crop.")
-                rand_x = random.randint(0, max(0, img_w - self.target_size[1]))
-                rand_y = random.randint(0, max(0, img_h - self.target_size[0]))
-                patch = image_data[rand_y:rand_y+min(self.target_size[0], img_h-rand_y),
-                              rand_x:rand_x+min(self.target_size[1], img_w-rand_x), :]
-                # Handle case where even random crop might be empty if target_size > image size
-                if patch.size == 0 or patch.shape[0] == 0 or patch.shape[1] == 0:
-                     print(f"Error: Could not generate valid patch for {full_path}. Skipping.")
-                     return None # Skip this sample
+            # Generate masks using the worker-specific model
+            masks_data = self._worker_sam2_model.generate(rgb_image_for_sam)
 
-            # --- Transform and Resize ---
-            # Ensure patch is C, H, W for PyTorch transforms/interpolation
-            patch = patch.transpose((2, 0, 1)) # HWC to CHW
-            patch_tensor = torch.from_numpy(patch).float()
+            if not masks_data: return None # No masks found
 
-            # Resize if necessary (using interpolate requires CHW format)
+            # Select a mask (e.g., randomly, largest) - using random for variety
+            mask_info = random.choice(masks_data)
+            bbox = mask_info['bbox'] # [x, y, w, h]
+
+            # Adjust bbox and crop from ORIGINAL hyperspectral image
+            adj_x = max(0, bbox[0])
+            adj_y = max(0, bbox[1])
+            adj_w = min(bbox[2], img_w - adj_x)
+            adj_h = min(bbox[3], img_h - adj_y)
+
+            if adj_w <= 0 or adj_h <= 0: return None # Invalid bbox
+
+            patch_np = image[adj_y:adj_y+adj_h, adj_x:adj_x+adj_w, :] # HWC NumPy
+
+            if patch_np.size == 0: return None
+
+            # --- Data Type Conversion and Resizing ---
+            # Convert to Tensor (CHW float) BEFORE resizing
+            patch_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float()
+
+            # Resize Tensor
             if patch_tensor.shape[1:] != self.target_size:
-                # Add batch dimension for interpolate, then remove
+                # Ensure tensor is on the correct device for F.interpolate if using GPU in worker
+                patch_tensor = patch_tensor.to(self.device)
                 patch_tensor = F.interpolate(
                     patch_tensor.unsqueeze(0),
                     size=self.target_size,
-                    mode='bilinear', # Consider 'nearest' if bilinear interpolation is problematic for spectral data
+                    mode='bilinear',
                     align_corners=False
                 ).squeeze(0)
+                # Move back to CPU if transforms expect CPU tensor
+                # patch_tensor = patch_tensor.cpu() # Optional: depends on transform
 
-            # Apply other transforms if they expect CHW tensor
+            # --- Apply Transforms (Assuming they expect a Tensor CHW) ---
             if self.transform:
-                patch_tensor = self.transform(patch_tensor)
-            # --- End Transform and Resize ---
+                 # Ensure tensor is on CPU if transforms expect CPU tensor
+                 # patch_tensor = patch_tensor.cpu()
+                 try:
+                     patch_tensor = self.transform(patch_tensor)
+                 except TypeError as te:
+                     # Catch the specific error and provide more context
+                     print(f"Transform TypeError in worker {os.getpid()} for index {idx}: {te}. Input tensor shape: {patch_tensor.shape}, dtype: {patch_tensor.dtype}, device: {patch_tensor.device}")
+                     raise te # Re-raise after printing
 
+			# Ensure final tensor is on the correct device for collation
+            patch_tensor = patch_tensor.to(self.device)
 
             return patch_tensor, label
 
         except Exception as e:
-            print(f"Error processing {full_path} at index {idx}: {e}")
-            # Optionally re-raise or return None depending on desired behavior
-            # raise e # Re-raise to stop execution
-            return None # Skip this sample if errors occur
+            print(f"Error processing {full_image_path} at index {idx} in worker {os.getpid()}: {e}")
+            # import traceback
+            # traceback.print_exc() # Uncomment for full traceback in worker
+            return None
 
 
 def collate_fn_skip_none(batch):
