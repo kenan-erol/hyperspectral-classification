@@ -182,6 +182,13 @@ def main(args):
                 if not os.path.exists(full_image_path):
                     continue
 
+                rel_dir = os.path.dirname(relative_path)
+                output_patch_subdir_check = os.path.join(output_patches_dir, rel_dir)
+                # Check if the specific output directory for this image exists and has files
+                if os.path.exists(output_patch_subdir_check) and len(os.listdir(output_patch_subdir_check)) > 0:
+                    # print(f"Skipping already processed image: {relative_path}") # Optional: for confirmation
+                    continue # Skip to the next image in the label file
+                
                 # Increment image counter *after* confirming the image exists
                 images_processed_count += 1
 
