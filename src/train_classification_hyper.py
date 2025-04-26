@@ -170,7 +170,7 @@ if __name__ == '__main__':
         train_dataset,
         batch_size=args.n_batch,
         shuffle=True,
-        num_workers=4, # Increase workers (adjust based on your system)
+        num_workers=0, # Increase workers (adjust based on your system)
         pin_memory=True,
         drop_last=True,
         collate_fn=collate_fn_skip_none_preprocessed # Use the new collate function
