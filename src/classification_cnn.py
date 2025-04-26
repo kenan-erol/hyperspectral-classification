@@ -97,6 +97,9 @@ def train(model,
             
             # print(total_loss, "rahh")
             total_loss = total_loss + loss
+            
+            print("\n>>> DEBUG: Breaking after one batch <<<")
+            break
 
         mean_loss = total_loss / float(batch)
 

@@ -3,6 +3,7 @@ import networks
 from matplotlib import pyplot as plt
 import math
 import log_utils
+import numpy as np
 
 class ClassificationModel(object):
     '''
@@ -280,19 +281,42 @@ class ClassificationModel(object):
             
             output = output[0:n_image_per_summary].cpu().detach().numpy()
             
-            ground_truth = ground_truth[0:n_image_per_summary].cpu().detach().numpy()
+            ground_truth = ground_truth[0:n_image_per_summary].cpu().detach().numpy()\
+                
+            actual_n_images = image_summary.shape[0]
             
-            for i in range(n):
-                start_idx = i * n
-                end_idx = start_idx + n
-                
-                displayable_image = log_utils.hsi_to_rgb_display(image_summary[start_idx:end_idx])
-                
-                images_display.append(displayable_image)
-                
-                subplot_titles.append([f'pred={output[i]}\nlabel={ground_truth[i]}' for i in range(start_idx, end_idx)])
-                
+            pred_indices = np.argmax(output, axis=1)
+            
+            for row_idx in range(n):
+                row_images = []
+                row_titles = []
+                for col_idx in range(n):
+                    img_idx = row_idx * n + col_idx
+                    if img_idx < actual_n_images:
+                        # Get the single image (H, W, C)
+                        single_hsi_image = image_summary[img_idx]
+                        # Convert it to displayable RGB
+                        displayable_image = log_utils.hsi_to_rgb_display(single_hsi_image)
+                        # Get corresponding prediction and label
+                        pred_label = pred_indices[img_idx]
+                        true_label = ground_truth[img_idx]
+                        title = f'pred={pred_label}\nlabel={true_label}'
+                    else:
+                        # Add placeholder if not enough images
+                        # Assuming image_summary has H, W, C dimensions known
+                        placeholder_shape = (image_summary.shape[1], image_summary.shape[2], 3)
+                        displayable_image = np.zeros(placeholder_shape, dtype=np.uint8)
+                        title = ''
+
+                    row_images.append(displayable_image)
+                    row_titles.append(title)
+
+                images_display.append(row_images)
+                subplot_titles.append(row_titles)
+
+            # Now images_display and subplot_titles are lists of lists
             fig = log_utils.plot_images(images_display, n, n, subplot_titles)
+
 
             # TODO: Log image summary to Tensorboard with <tag>_image as its summary tag name using
             # https://pytorch.org/docs/stable/tensorboard.html#torch.utils.tensorboard.writer.SummaryWriter.add_figure
