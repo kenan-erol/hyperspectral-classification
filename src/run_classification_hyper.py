@@ -1,204 +1,243 @@
-import os
+import os, argparse
 import torch
 import numpy as np
-import random
-from torch.utils.data import DataLoader, Dataset # Removed random_split as we use sklearn now
+from torch.utils.data import DataLoader
 from torchvision import transforms
-import torch.nn.functional as F # For padding if needed
-from sklearn.model_selection import train_test_split # Import train_test_split
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Assuming these modules exist and have the expected interfaces
 from classification_model import ClassificationModel
-from classification_cnn import evaluate # Removed train
-from sam2 import SAM2 # Assuming SAM2 has a 'generate_masks' method returning bboxes
-import argparse # Add argparse for command-line arguments
+# --- Import the NEW dataset and collate function ---
+from datasets import PreprocessedPatchDataset, collate_fn_skip_none_preprocessed
+# --- End Import ---
 
-from datasets import HyperspectralPatchDataset, collate_fn_skip_none
+# --- Remove SAM2/Hydra imports if they were present ---
+# ...
+# --- End Remove ---
 
-# train (#train_classification_hyper.py:203-213): Instantiates HyperspectralPatchDataset passing sam2_checkpoint_path, sam2_config_name, and device. This allows the dataset's __getitem__ (#datasets.py:95-199) to initialize and use SAM2 within worker processes (#datasets.py:79-93) to generate patches on-the-fly.
-# run (#run_classification_hyper.py:119-127): Instantiates the same HyperspectralPatchDataset class but does not pass the SAM2-related arguments (sam2_checkpoint_path, sam2_config_name).
-# Sensibility: This reveals a major difference in assumptions and is highly suspicious.
-# The train script assumes it needs to generate patches dynamically using SAM2 during data loading.
-# The run script, by omitting the SAM2 arguments, implicitly assumes that the HyperspectralPatchDataset can function without them. However, looking at the __getitem__ implementation (#datasets.py:95-199), it requires self._worker_sam2_model (#datasets.py:143-144) which is only initialized if the SAM2 config details are provided to __init__ (#datasets.py:18-41).
-# Conclusion: run_classification_hyper.py likely assumes it's operating on pre-generated patches (like those created by preproc_a2s2k.py), but it's using a Dataset class designed for on-the-fly generation. This mismatch will likely cause __getitem__ to fail consistently in the run script because self._worker_sam2_model will never be initialized.
-# DataLoader Settings:
 
-# train (#train_classification_hyper.py:218-225): shuffle=True, drop_last=True.
-# run (#run_classification_hyper.py:132-138): shuffle=False. The excerpt cuts off, but drop_last should ideally be False for evaluation. Both use num_workers=4 and collate_fn_skip_none.
-# Sensibility: Shuffling only training data makes sense. drop_last=True for training is acceptable, but drop_last=False is generally preferred for testing to evaluate all samples. Using collate_fn_skip_none in run might hide errors if __getitem__ fails due to the SAM2 issue mentioned above. num_workers=4 is acceptable but might be overkill for inference.
-# Model:
+# Define command-line arguments
+parser = argparse.ArgumentParser()
+# Data settings
+parser.add_argument('--n_batch',
+    type=int, required=True, help='Number of samples per batch')
+parser.add_argument('--data_dir',
+    type=str, required=True, help='Directory containing PREPROCESSED patches and labels.txt') # Updated help
+parser.add_argument('--label_file',
+    type=str, required=True, help='Path to the labels.txt file WITHIN the data_dir') # Updated help
+# --- Remove arguments no longer needed ---
+# parser.add_argument('--num_patches_per_image', ...)
+# --- End Remove ---
+parser.add_argument('--patch_size',
+    type=int, default=224, help='Expected size of image patches')
+parser.add_argument('--train_split_ratio', # Keep this to identify the TEST split
+    type=float, default=0.8, help='Proportion of PATCHES used for training (to determine test set)')
 
-# train: Initializes a new ClassificationModel.
-# run: (Assumed) Loads model state from a checkpoint file specified via arguments.
-# Sensibility: Expected difference between training and inference. make sure run can actually load the model state correctly.
+# Network settings
+parser.add_argument('--encoder_type',
+    type=str, required=True, help='Encoder type used during training: vggnet11, resnet18')
+parser.add_argument('--num_channels',
+    type=int, required=True, help='Number of spectral bands in hyperspectral data')
 
-# train: Defines a transform pipeline (currently includes Normalize).
-# run: Also uses a transform variable (definition not shown in excerpt).
-# Sensibility: Makes sense, but it is absolutely critical that the normalization (and any other non-augmentation transforms) applied during testing (run) are identical to those used during training (train). If the means/stds in transforms.Normalize differ, or if it's missing in one script, the evaluation results will be invalid.
-# Suspicious Lines / Potential Issues:
+# Checkpoint settings
+parser.add_argument('--checkpoint_path',
+    type=str, required=True, help='Path directory containing the trained model checkpoint (e.g., model_best.pth)')
 
-# HyperspectralPatchDataset Usage in run_classification_hyper.py (#run_classification_hyper.py:119-127): This is the biggest issue. Using this dataset class without providing the SAM2 arguments it needs for its core __getitem__ logic (#datasets.py:95-199) is incorrect if it's meant to work like the training script. If run is meant for pre-generated patches, it should use a different, simpler Dataset class that just loads .npy files.
-# Transform Consistency: The transform definition in run_classification_hyper.py (not shown) must match the one in train_classification_hyper.py (#train_classification_hyper.py:123-128), especially the Normalize parameters. Verify this.
-# collate_fn_skip_none in run_classification_hyper.py (#run_classification_hyper.py:136): If the dataset issue (Point 1) causes __getitem__ to always return None, this collate function will result in empty batches being fed to the model during evaluation, likely causing a crash similar to the conv2d error seen during training attempts, or producing zero accuracy.
-# drop_last in Test DataLoader (#run_classification_hyper.py:138): Ensure drop_last=False (or is omitted, as False is the default) for the test DataLoader to evaluate the entire test set.
-# transforms.Normalize in train_classification_hyper.py (#train_classification_hyper.py:127): The current normalization mean=[0.5]*args.num_channels, std=[0.5]*args.num_channels assumes the input tensor is scaled to [0, 1] and shifts it to [-1, 1]. Is this the correct normalization strategy? Often, normalization uses the actual dataset mean/std per channel. Also, this transform expects a Tensor, which is now correct after previous fixes, but the TypeError seen before suggests this might have been problematic. Ensure the tensor entering this transform has the shape (num_channels, H, W).
-# In summary, the most critical issue is the inconsistent use and assumptions of the HyperspectralPatchDataset between the two scripts regarding SAM2 patch generation. This needs to be reconciled.
+# Hardware settings
+parser.add_argument('--device',
+    type=str, default='cuda', help='Device to use: gpu, cpu')
 
-# --- Argument Parser ---
-parser = argparse.ArgumentParser(description="Evaluate Hyperspectral Classification Model")
-parser.add_argument('--data_dir', type=str, required=True, help='Directory containing hyperspectral data subfolders')
-parser.add_argument('--label_file', type=str, required=True, help='File containing relative image paths and labels')
-parser.add_argument('--checkpoint_path', type=str, required=True, help='Path to the trained model checkpoint (.pth file)')
-parser.add_argument('--output_path', type=str, required=True, help='Directory to save evaluation outputs (e.g., confusion matrix plot)')
-parser.add_argument('--encoder_type', type=str, required=True, help='Encoder type used during training (e.g., resnet18)')
-parser.add_argument('--num_channels', type=int, required=True, help='Number of spectral bands (must match training)')
-parser.add_argument('--n_batch', type=int, default=32, help='Batch size for evaluation')
-parser.add_argument('--num_patches_per_image', type=int, default=5, help='Number of patches per image for evaluation (should ideally match training)')
-parser.add_argument('--patch_size', type=int, default=224, help='Patch size used during training')
-parser.add_argument('--train_split_ratio', type=float, default=0.8, help='Train split ratio used during training (to define the test set)')
-parser.add_argument('--device', type=str, default='cuda', help='Device to use: cuda or cpu')
 args = parser.parse_args()
+
+def run(model, dataloader, device):
+    # ... (Keep the run function logic as is) ...
+    model.eval()
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        for inputs, labels in tqdm(dataloader, desc="Evaluating"):
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            _, preds = torch.max(outputs, 1)
+            all_preds.extend(preds.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
+    return all_preds, all_labels
 
 
 if __name__ == '__main__':
-    # --- Configuration ---
-    data_dir = args.data_dir
-    label_file = args.label_file
-    checkpoint_load_path = args.checkpoint_path # Path to the specific .pth file
-    output_path = args.output_path
-    n_batch = args.n_batch
-    num_patches_per_image = args.num_patches_per_image
-    patch_size = args.patch_size
-    train_split_ratio = args.train_split_ratio
-    device = args.device
-    num_channels = args.num_channels
-    encoder_type = args.encoder_type
+    # --- Setup Device ---
+    if args.device == 'gpu' or args.device == 'cuda':
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+        else:
+            print("CUDA not available, falling back to CPU.")
+            device = torch.device('cpu')
+    else:
+        device = torch.device('cpu')
+        print("Using CPU.")
+    # --- End Device Setup ---
 
-    os.makedirs(output_path, exist_ok=True)
-
-    # --- Transformations ---
-    # Use the same basic transform as training, without augmentation
-    transform = transforms.Compose([
-        transforms.ToTensor(), # Converts (H, W, C) np.uint8 -> (C, H, W) torch.float32 [0,1]
-        # transforms.Resize(patch_size, antialias=True), # Ensure resize if needed
-        # transforms.Normalize(mean=[...], std=[...]) # Use same normalization as training if applied
-    ])
-
-    # --- Load All Samples and Split Based on Unique Images ---
-    print("Loading image list and labels...")
-    all_samples = []
+    # --- Load Preprocessed Labels ---
+    print("Loading patch list and labels from preprocessed data...")
+    all_patch_samples = []
     class_labels = set()
-    class_map = {} # To map integer labels back to names if needed
-    label_counter = 0
-    try:
-        with open(label_file, 'r') as f:
-            for line in f:
-                relative_path, label_str = line.strip().split()
-                label = int(label_str)
-                # Check if the actual file exists relative to data_dir
-                full_path_check = os.path.join(data_dir, relative_path)
-                if os.path.exists(full_path_check):
-                    all_samples.append((relative_path, label))
-                    class_labels.add(label)
-                    # Optional: try to infer class name from path
-                    try:
-                        # Example: Assumes path like 'DrugName_Date/Group/M*/file.npy'
-                        drug_name = relative_path.split(os.sep)[0].split('_')[0]
-                        if label not in class_map:
-                            class_map[label] = drug_name
-                    except:
-                        if label not in class_map: # Fallback to numeric label
-                           class_map[label] = str(label)
+    full_label_file_path = os.path.join(args.data_dir, args.label_file)
 
-                else:
-                    print(f"Warning: Image file not found {full_path_check}, skipping.")
+    try:
+        with open(full_label_file_path, 'r') as f:
+            for i, line in enumerate(f):
+                line = line.strip()
+                if not line: continue
+                try:
+                    relative_path, label_str = line.rsplit(' ', 1)
+                    label = int(label_str)
+                    all_patch_samples.append((relative_path, label))
+                    class_labels.add(label)
+                except ValueError as e:
+                    print(f"Warning: Skipping malformed line {i+1} in {full_label_file_path}: '{line}' - Reason: {e}")
     except FileNotFoundError:
-        print(f"Error: Label file not found at {label_file}")
+        print(f"Error: Preprocessed label file not found at {full_label_file_path}")
         exit(1)
     except Exception as e:
-        print(f"Error reading label file {label_file}: {e}")
+        print(f"Error reading preprocessed label file {full_label_file_path}: {e}")
         exit(1)
 
-
-    if not all_samples:
-        raise ValueError("No valid samples found. Check label file and data directory.")
+    if not all_patch_samples:
+        raise ValueError("No valid patch samples found.")
 
     num_classes = len(class_labels)
-    # Create sorted class names list for evaluation function
-    class_names = [class_map[i] for i in sorted(class_labels)]
-    print(f"Found {len(all_samples)} unique images belonging to {num_classes} classes: {class_names}")
+    print(f"Found {len(all_patch_samples)} total patches belonging to {num_classes} classes.")
+    # --- End Load Labels ---
 
 
-    # Split the list of unique (image_path, label) tuples
-    image_paths = [s[0] for s in all_samples]
-    labels = [s[1] for s in all_samples]
+    # --- Determine Test Split ---
+    patch_paths = [s[0] for s in all_patch_samples]
+    patch_labels = [s[1] for s in all_patch_samples]
 
-    # Use train_test_split to get the *test* set consistent with training split
-    _, test_paths, _, test_labels = train_test_split(
-        image_paths, labels,
-        train_size=train_split_ratio, # Specify train size to get the remainder as test
-        random_state=42,  # Use the same random state as training
-        stratify=labels # Ensure class distribution is similar
-    )
+    if args.train_split_ratio < 1.0:
+         # Use train_test_split to get the *test* portion consistently
+         _, test_paths, _, test_labels = train_test_split(
+             patch_paths, patch_labels,
+             train_size=args.train_split_ratio, # Specify train size
+             random_state=42, # Use same random state as in training script
+             stratify=patch_labels # Stratify based on patch labels
+         )
+         test_samples = list(zip(test_paths, test_labels))
+         print(f"Using Test set with {len(test_samples)} patches")
+    else:
+         # If train ratio was 1.0, there's no separate test set from this split
+         print("Warning: train_split_ratio is 1.0 or greater. No test set generated from this split.")
+         print("Evaluation will run on the full dataset provided.")
+         test_samples = all_patch_samples # Evaluate on all data as 'test'
 
-    test_samples = list(zip(test_paths, test_labels))
+    if not test_samples:
+         print("Error: No samples available for the test set.")
+         exit(1)
+    # --- End Test Split ---
 
-    print(f"Using Test set with {len(test_samples)} unique images")
 
     # --- Create Test Dataset ---
+    # Define transform (only normalization needed usually for evaluation)
+    transform_mean = [0.5] * args.num_channels if args.num_channels > 0 else None
+    transform_std = [0.5] * args.num_channels if args.num_channels > 0 else None
+
     print("Creating test dataset instance...")
-    test_dataset = HyperspectralPatchDataset(
-        data_dir,
-        test_samples, # Pass the list of test samples
-        num_patches_per_image=num_patches_per_image,
-        transform=transform,
-        target_size=(patch_size, patch_size)
+    # --- Instantiate the NEW dataset ---
+    test_dataset = PreprocessedPatchDataset(
+        data_dir=args.data_dir,
+        samples=test_samples, # Pass the list of test samples
+        num_channels=args.num_channels,
+        transform_mean=transform_mean,
+        transform_std=transform_std,
+        target_size=(args.patch_size, args.patch_size)
     )
+    # --- End Instantiate ---
     print(f"Test dataset size: {len(test_dataset)} patches")
 
 
     # --- DataLoaders ---
     print("Creating Test DataLoader...")
+    # --- Use the NEW collate_fn and potentially more workers ---
     test_dataloader = DataLoader(
         test_dataset,
-        batch_size=n_batch,
+        batch_size=args.n_batch,
         shuffle=False, # No need to shuffle test set
-        collate_fn=collate_fn_skip_none,
-        num_workers=4,
-        pin_memory=True if device == 'cuda' else False
+        num_workers=4, # Increase workers
+        pin_memory=True,
+        collate_fn=collate_fn_skip_none_preprocessed # Use the new collate function
     )
+    # --- End DataLoader Update ---
     print("Test DataLoader created.")
 
-    # --- Model ---
-    print(f"Initializing model with {num_channels} input channels and {num_classes} classes on {device}...")
+
+    # --- Load Model ---
+    print(f"Loading model with {args.num_channels} input channels and {num_classes} classes...")
     model = ClassificationModel(
-        encoder_type=encoder_type,
-        input_channels=num_channels,
-        num_classes=num_classes, # Use dynamically determined number of classes
-        device=device
+        encoder_type=args.encoder_type,
+        input_channels=args.num_channels,
+        num_classes=num_classes,
+        device=device # Pass the determined device
     )
-    model.to(device)
-    print("Model initialized.")
 
-    # --- Load Checkpoint ---
-    print(f"Loading model checkpoint from {checkpoint_load_path}...")
+    # Load checkpoint
+    model_checkpoint_file = os.path.join(args.checkpoint_path, 'model_best.pth') # Or specific checkpoint name
+    if not os.path.exists(model_checkpoint_file):
+        print(f"Error: Model checkpoint not found at {model_checkpoint_file}")
+        exit(1)
+
     try:
-        # Use restore_model which handles DataParallel wrappers if necessary
-        step, _ = model.restore_model(checkpoint_load_path)
-        print(f"Loaded model weights from step {step}.")
-    except FileNotFoundError:
-        print(f"Error: Checkpoint file not found at {checkpoint_load_path}")
-        exit(1)
+        print(f"Loading state dict from {model_checkpoint_file}")
+        # Load state dict, ensuring it's mapped to the correct device
+        model.load_state_dict(torch.load(model_checkpoint_file, map_location=device))
+        model.to(device) # Ensure model is on the correct device
+        print("Model loaded successfully.")
     except Exception as e:
-        print(f"Error loading checkpoint: {e}")
+        print(f"Error loading model checkpoint: {e}")
+        exit(1)
+    # --- End Load Model ---
+
+
+    # --- Run Evaluation ---
+    print("Starting evaluation...")
+    from tqdm import tqdm # Make sure tqdm is imported
+    predictions, true_labels = run(model, test_dataloader, device)
+    print("Evaluation finished.")
+    # --- End Evaluation ---
+
+
+    # --- Calculate and Print Metrics ---
+    if not predictions or not true_labels:
+        print("Error: No predictions or labels were generated during evaluation.")
         exit(1)
 
-    # --- Evaluate ---
-    print("Starting evaluation on the test set...")
-    model.eval() # Set model to evaluation mode
+    accuracy = accuracy_score(true_labels, predictions)
+    conf_matrix = confusion_matrix(true_labels, predictions)
+    class_report = classification_report(true_labels, predictions, target_names=[str(i) for i in sorted(list(class_labels))], zero_division=0)
 
-    # Pass class names list to evaluate function
-    evaluation_results = evaluate(model, test_dataloader, class_names, output_path, device)
-    print("Evaluation finished.")
-    # Assuming evaluate prints results internally or returns them
-    # print(f"Evaluation Results: {evaluation_results}") # Uncomment if evaluate returns results
+    print("\n--- Evaluation Results ---")
+    print(f"Accuracy: {accuracy:.4f}")
+    print("\nClassification Report:")
+    print(class_report)
+    print("\nConfusion Matrix:")
+    print(conf_matrix)
+    # --- End Metrics ---
+
+
+    # --- Save Confusion Matrix Plot ---
+    try:
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=sorted(list(class_labels)), yticklabels=sorted(list(class_labels)))
+        plt.xlabel('Predicted Label')
+        plt.ylabel('True Label')
+        plt.title('Confusion Matrix')
+        plot_path = os.path.join(args.checkpoint_path, 'confusion_matrix.png')
+        plt.savefig(plot_path)
+        print(f"Confusion matrix plot saved to {plot_path}")
+        plt.close()
+    except Exception as plot_e:
+        print(f"Error saving confusion matrix plot: {plot_e}")
+    # --- End Plot ---

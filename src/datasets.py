@@ -308,3 +308,99 @@ def collate_fn_skip_none(batch):
     if not batch:
         return torch.tensor([]), torch.tensor([])
     return torch.utils.data.dataloader.default_collate(batch)
+
+class PreprocessedPatchDataset(Dataset):
+    """
+    Dataset to load pre-generated hyperspectral patches (.npy files).
+    Assumes a label file where each line is: relative/path/to/patch.npy label
+    The relative path should be relative to the data_dir provided.
+    """
+    def __init__(self,
+                 data_dir,      # Base directory where patches are saved (e.g., './data_processed_patch/')
+                 samples,       # List of (relative_patch_path, label) tuples
+                 num_channels=0, # Needed for transform
+                 transform_mean=None,
+                 transform_std=None,
+                 target_size=(224, 224)): # Ensure patches are resized if needed
+        self.data_dir = data_dir
+        self.samples = samples # Use the provided list directly
+        self.num_channels = num_channels
+        self.transform_mean = transform_mean
+        self.transform_std = transform_std
+        self.target_size = target_size
+        self.transform = self._create_transform()
+        if not self.samples:
+             print("Warning: PreprocessedPatchDataset initialized with zero samples.")
+        else:
+             print(f"PreprocessedPatchDataset initialized. Using {len(self.samples)} provided samples.")
+             # Optional: Check if the first sample file exists
+             first_rel_path, _ = self.samples[0]
+             first_full_path = os.path.join(self.data_dir, first_rel_path)
+             if not os.path.exists(first_full_path):
+                 print(f"Warning: First sample file not found at {first_full_path}. Check data_dir and relative paths.")
+
+
+    def _create_transform(self):
+        """Creates the normalization transform if parameters are provided."""
+        if self.transform_mean is not None and self.transform_std is not None and self.num_channels > 0:
+            mean = self.transform_mean if len(self.transform_mean) == self.num_channels else [self.transform_mean[0]] * self.num_channels
+            std = self.transform_std if len(self.transform_std) == self.num_channels else [self.transform_std[0]] * self.num_channels
+            return transforms.Compose([
+                transforms.Normalize(mean=mean, std=std),
+            ])
+        return None
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __getitem__(self, idx):
+        if idx >= len(self.samples):
+             print(f"Error: Index {idx} out of bounds for dataset size {len(self.samples)}")
+             return None, None # Or raise IndexError
+
+        relative_path, label = self.samples[idx]
+        full_patch_path = os.path.join(self.data_dir, relative_path)
+
+        try:
+            # Load the .npy patch file
+            patch_np = np.load(full_patch_path) # Should be HWC, float32
+
+            # Ensure correct format (HWC -> CHW tensor)
+            if patch_np.ndim == 2: # Handle potential grayscale if needed
+                patch_np = np.expand_dims(patch_np, axis=-1)
+            patch_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
+
+            # Resize if necessary (should ideally be done in preprocessing)
+            if patch_tensor.shape[1:] != self.target_size:
+                 patch_tensor = F.interpolate(
+                     patch_tensor.unsqueeze(0),
+                     size=self.target_size,
+                     mode='bilinear',
+                     align_corners=False
+                 ).squeeze(0)
+
+            # Apply normalization transform
+            if self.transform:
+                patch_tensor = self.transform(patch_tensor)
+
+            return patch_tensor, label
+
+        except FileNotFoundError:
+            print(f"Error: Patch file not found: {full_patch_path} for index {idx}")
+            return None, None # Return None if file not found
+        except Exception as e:
+            print(f"Error loading or processing patch {full_patch_path} for index {idx}: {e}")
+            # import traceback # Uncomment for debugging
+            # traceback.print_exc() # Uncomment for debugging
+            return None, None # Return None on other errors
+
+def collate_fn_skip_none_preprocessed(batch):
+    """Collate function that filters out items where the patch tensor is None."""
+    # Filter out samples where the first element (the tensor) is None
+    batch = [item for item in batch if item[0] is not None]
+    if not batch:
+        # Return empty tensors or raise an error if the whole batch failed
+        # Returning empty tensors might be safer for the training loop
+        return torch.tensor([]), torch.tensor([]) # Match expected output structure (tensors, labels)
+    # Use default collate for the filtered batch
+    return torch.utils.data.dataloader.default_collate(batch)
