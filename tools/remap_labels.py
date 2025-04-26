@@ -165,16 +165,31 @@ def main(original_labels_path, patches_base_dir, output_labels_path):
 
     print(f"\nStep 3: Writing corrected labels to '{output_labels_path}'...")
     try:
-        # Ensure output directory exists
-        os.makedirs(os.path.dirname(output_labels_path), exist_ok=True)
-        with open(output_labels_path, 'w') as f_out:
+        # --- Start Modification ---
+        # Resolve to an absolute path before creating dirs or opening
+        absolute_output_path = os.path.abspath(output_labels_path)
+        print(f"Resolved absolute output path: {absolute_output_path}")
+
+        # Ensure output directory exists using the absolute path
+        output_dir = os.path.dirname(absolute_output_path)
+        # Create directory only if output_dir is not empty (i.e., not the current dir)
+        # and the directory doesn't already exist.
+        if output_dir and not os.path.exists(output_dir):
+            print(f"Creating output directory: {output_dir}")
+            os.makedirs(output_dir) # No need for exist_ok=True due to check
+
+        # Write using the absolute path
+        with open(absolute_output_path, 'w') as f_out:
             # Sort lines for consistency (optional, but helpful)
             corrected_lines.sort()
             for line in corrected_lines:
                 f_out.write(line + "\n")
+        # --- End Modification ---
         print("Corrected labels file written successfully.")
     except Exception as e:
         print(f"Error writing output file: {e}")
+        # import traceback # Uncomment for more detailed debugging if needed
+        # traceback.print_exc() # Uncomment for more detailed debugging if needed
         exit(1)
 
 if __name__ == "__main__":
