@@ -70,7 +70,7 @@ def train(model,
                 param_group['lr'] *= learning_rate_decay
             pass
 
-        for batch, (images, labels, _) in enumerate(dataloader):
+        for batch, (images, labels) in enumerate(dataloader):
             print('Batch={}/{}  '.format(batch + 1, len(dataloader)), end='')
 
             # TODO: Move images and labels to device

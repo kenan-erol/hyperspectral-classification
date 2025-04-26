@@ -4,42 +4,59 @@ from pathlib import Path
 from tqdm import tqdm
 import argparse
 
-def parse_incorrect_path(incorrect_path_str):
+# --- Start Modification: Renamed and improved parsing function ---
+def parse_path_for_mapping(path_str):
     """
-    Parses the potentially incorrect path string from the original labels.txt
+    Parses a path string (potentially correct or incorrect) from labels.txt
     to extract key identifying components: Drug, Group, Mxxx, Filename.
-    Assumes the first directory after 'patches/' is the Drug name, and
-    the structure '.../Group/Mxxx/filename.npy' exists towards the end.
+    Returns a tuple (Drug, Group, Mxxx, Filename) or None if parsing fails.
     """
     try:
-        p = Path(incorrect_path_str)
+        p = Path(path_str)
         parts = [part for part in p.parts if part] # Filter empty parts
 
-        if len(parts) < 5 or parts[0].lower() != 'patches':
-            return None # Not a valid structure
+        if not parts or parts[0].lower() != 'patches':
+            # print(f"Debug parse_path_for_mapping: Path doesn't start with patches: {parts}")
+            return None # Must start with patches
 
-        drug_name = parts[1] # Assume first dir after 'patches' is the drug name
-        filename = parts[-1]
-        mxxx_id = parts[-2]
-        group_dir = parts[-3]
+        # Find filename, Mxxx, Group by working backwards
+        filename = None
+        mxxx_id = None
+        group_dir = None
+        filename_idx = -1
 
-        # Basic validation
-        if group_dir.lower() != 'group' or not mxxx_id.startswith('M') or not filename.endswith('.npy'):
-             # Try going back one level if repetition exists like Drug/Drug/Group...
-             if len(parts) > 5 and parts[-4].lower() == 'group':
-                 filename = parts[-1]
-                 mxxx_id = parts[-2]
-                 group_dir = parts[-4] # Use the earlier 'Group'
-                 # Drug name remains parts[1]
-             else:
-                 # print(f"Warning: Unexpected structure near end: {parts[-3:]}")
-                 return None # Structure doesn't match expected end
+        # Iterate backwards from the end to find the standard structure
+        for i in range(len(parts) - 1, 0, -1):
+            part = parts[i]
+            # Check for filename pattern
+            if part.endswith('.npy') and part.startswith('measurement_patch_'):
+                filename = part
+                filename_idx = i
+                # Check preceding parts for Mxxx and Group
+                if i > 1 and parts[i-1].startswith('M'):
+                    mxxx_id = parts[i-1]
+                    if i > 2 and parts[i-2].lower() == 'group':
+                        group_dir = parts[i-2]
+                        break # Found the expected end structure: Group/Mxxx/Filename.npy
 
-        return (drug_name, group_dir, mxxx_id, filename)
+        if not (filename and mxxx_id and group_dir):
+             # print(f"Debug parse_path_for_mapping: Could not find Group/Mxxx/filename structure at the end: {parts}")
+             return None # Didn't find the expected structure at the end
+
+        # Assume Drug name is the component immediately after 'patches'
+        # This works for both 'patches/Drug/Group/...' and 'patches/Drug/Drug/Group/...'
+        if len(parts) > 1:
+            drug_name = parts[1]
+            return (drug_name, group_dir, mxxx_id, filename)
+        else:
+            # print(f"Debug parse_path_for_mapping: Path too short after finding structure: {parts}")
+            return None # Path is just 'patches/'? Should not happen if structure found
 
     except Exception as e:
-        # print(f"Error parsing incorrect path '{incorrect_path_str}': {e}")
+        # print(f"Debug parse_path_for_mapping: Exception parsing '{path_str}': {e}")
         return None
+# --- End Modification ---
+
 
 def parse_correct_path(correct_relative_path_str):
     """
@@ -88,20 +105,24 @@ def main(original_labels_path, patches_base_dir, output_labels_path):
                 if len(parts) < 2: continue
 
                 label_str = parts[-1]
-                incorrect_path_str = " ".join(parts[:-1])
+                path_str_from_file = " ".join(parts[:-1]) # Use the new function name
 
-                key_parts = parse_incorrect_path(incorrect_path_str)
+                # --- Start Modification: Use the new parsing function ---
+                key_parts = parse_path_for_mapping(path_str_from_file)
+                # --- End Modification ---
 
                 if key_parts:
                     try:
                         label = int(label_str)
-                        # Use lowercase for key components for case-insensitive matching later if needed,
-                        # but store original case drug name if needed for output consistency.
-                        # For simplicity, let's use original case for now.
+                        # Check for duplicate keys which might indicate issues in original labels.txt
+                        # if key_parts in label_mapping and label_mapping[key_parts] != label:
+                        #      print(f"Warning: Duplicate key {key_parts} with different labels ({label_mapping[key_parts]} vs {label}) found in original file. Overwriting.")
                         label_mapping[key_parts] = label
                     except ValueError:
+                        # print(f"Warning: Could not convert label '{label_str}' to int for key {key_parts}")
                         skipped_original += 1
                 else:
+                    # print(f"Warning: Could not parse key parts from line: {line}")
                     skipped_original += 1
 
     except FileNotFoundError:
@@ -111,7 +132,7 @@ def main(original_labels_path, patches_base_dir, output_labels_path):
         print(f"Error reading original labels file: {e}")
         exit(1)
 
-    print(f"Created mapping for {len(label_mapping)} entries. Skipped {skipped_original} lines from original file.")
+    print(f"Created mapping for {len(label_mapping)} unique entries. Skipped {skipped_original} lines from original file.")
     if not label_mapping:
         print("Error: No valid entries could be mapped from the original labels file.")
         exit(1)
@@ -127,37 +148,45 @@ def main(original_labels_path, patches_base_dir, output_labels_path):
          print(f"Error: Patches base directory '{patches_base_dir}' not found.")
          exit(1)
 
+    # Use tqdm for walking directory as well
+    file_list = []
     for root, _, files in os.walk(patches_base_dir):
         for filename in files:
             if filename.endswith('.npy') and filename.startswith('measurement_patch_'):
-                found_files += 1
-                full_path = os.path.join(root, filename)
-                # Get path relative to the *parent* of patches_base_dir if it includes 'patches' itself
-                # Or relative to patches_base_dir if it's the direct container like 'patches/'
-                relative_to_walk_start = os.path.relpath(full_path, patches_base_dir)
+                 file_list.append(os.path.join(root, filename))
 
-                # Parse this correct relative path (e.g., Drug/Group/Mxxx/filename.npy)
-                correct_key_parts = parse_correct_path(relative_to_walk_start)
+    print(f"Found {len(file_list)} potential '.npy' files. Matching them to labels...")
 
-                if correct_key_parts:
-                    # Look up the label using the parsed parts
-                    label = label_mapping.get(correct_key_parts)
-                    if label is not None:
-                        # Construct the final path string starting with 'patches/'
-                        final_path_str = Path('patches') / relative_to_walk_start
-                        corrected_lines.append(f"{final_path_str.as_posix()} {label}") # Use as_posix for forward slashes
-                        matched_files += 1
-                    else:
-                        # print(f"Warning: No label found in mapping for key: {correct_key_parts} (File: {relative_to_walk_start})")
-                        unmatched_files += 1
-                else:
-                     # print(f"Warning: Could not parse correct path structure for: {relative_to_walk_start}")
-                     unmatched_files += 1 # Count files that couldn't be parsed correctly
+    for full_path in tqdm(file_list, desc="Matching files"):
+        found_files += 1 # Count every file found by walk
+        relative_to_walk_start = os.path.relpath(full_path, patches_base_dir)
 
-    print(f"Found {found_files} '.npy' files.")
+        # Parse this correct relative path (e.g., Drug/Group/Mxxx/filename.npy)
+        correct_key_parts = parse_correct_path(relative_to_walk_start)
+
+        if correct_key_parts:
+            # Look up the label using the parsed parts from the *correct* path
+            label = label_mapping.get(correct_key_parts)
+            if label is not None:
+                # Construct the final path string starting with 'patches/'
+                final_path_str = Path('patches') / relative_to_walk_start
+                corrected_lines.append(f"{final_path_str.as_posix()} {label}") # Use as_posix for forward slashes
+                matched_files += 1
+            else:
+                # This file exists but its key wasn't in the mapping from original labels.txt
+                # print(f"Warning: No label found in mapping for key: {correct_key_parts} (File: {relative_to_walk_start})")
+                unmatched_files += 1
+        else:
+             # The path structure of the found file itself is unexpected
+             # print(f"Warning: Could not parse correct path structure for found file: {relative_to_walk_start}")
+             unmatched_files += 1 # Count files that couldn't be parsed correctly
+
+    print(f"\nTotal files processed: {found_files}")
     print(f"Successfully matched {matched_files} files to labels.")
     if unmatched_files > 0:
-        print(f"Warning: Could not find labels or parse path for {unmatched_files} files.")
+        # This warning is now more meaningful - it means files exist on disk
+        # that either weren't in the original labels file at all, or couldn't be parsed.
+        print(f"Warning: Could not find labels or parse path for {unmatched_files} files found in the directory structure.")
 
     if not corrected_lines:
         print("Error: No corrected label lines were generated. Check paths and mapping.")
@@ -165,18 +194,15 @@ def main(original_labels_path, patches_base_dir, output_labels_path):
 
     print(f"\nStep 3: Writing corrected labels to '{output_labels_path}'...")
     try:
-        # --- Start Modification ---
         # Resolve to an absolute path before creating dirs or opening
         absolute_output_path = os.path.abspath(output_labels_path)
-        print(f"Resolved absolute output path: {absolute_output_path}")
+        # print(f"Resolved absolute output path: {absolute_output_path}") # Keep for debugging if needed
 
         # Ensure output directory exists using the absolute path
         output_dir = os.path.dirname(absolute_output_path)
-        # Create directory only if output_dir is not empty (i.e., not the current dir)
-        # and the directory doesn't already exist.
         if output_dir and not os.path.exists(output_dir):
-            print(f"Creating output directory: {output_dir}")
-            os.makedirs(output_dir) # No need for exist_ok=True due to check
+            # print(f"Creating output directory: {output_dir}") # Keep for debugging if needed
+            os.makedirs(output_dir)
 
         # Write using the absolute path
         with open(absolute_output_path, 'w') as f_out:
@@ -184,7 +210,6 @@ def main(original_labels_path, patches_base_dir, output_labels_path):
             corrected_lines.sort()
             for line in corrected_lines:
                 f_out.write(line + "\n")
-        # --- End Modification ---
         print("Corrected labels file written successfully.")
     except Exception as e:
         print(f"Error writing output file: {e}")
