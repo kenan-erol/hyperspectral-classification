@@ -113,6 +113,9 @@ def train(model,
         model.log_summary(train_summary_writer, 'train', epoch, images, outputs, labels, 
                           scalars={'loss': mean_loss}
                           )
+        
+        print("\n>>> DEBUG: Breaking after one epoch <<<")
+        break
 
 
     return model
