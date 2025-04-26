@@ -286,7 +286,9 @@ class ClassificationModel(object):
                 start_idx = i * n
                 end_idx = start_idx + n
                 
-                images_display.append(image_summary[start_idx:end_idx])
+                displayable_image = log_utils.hsi_to_rgb_display(image_summary[start_idx:end_idx])
+                
+                images_display.append(displayable_image)
                 
                 subplot_titles.append([f'pred={output[i]}\nlabel={ground_truth[i]}' for i in range(start_idx, end_idx)])
                 

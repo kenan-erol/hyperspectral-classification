@@ -1,5 +1,18 @@
 import matplotlib.pyplot as plt
+import numpy as np
 
+def hsi_to_rgb_display(hsi_image):
+    # Helper to convert HSI to displayable RGB (same as in datasets.py)
+    if hsi_image.ndim == 2: hsi_image = np.expand_dims(hsi_image, axis=-1)
+    img_h, img_w, img_c = hsi_image.shape
+    if img_c == 0: return np.zeros((img_h, img_w, 3), dtype=np.uint8)
+    display_img = np.mean(hsi_image, axis=2)
+    min_val, max_val = np.min(display_img), np.max(display_img)
+    if max_val > min_val:
+        display_img = ((display_img - min_val) / (max_val - min_val) * 255).astype(np.uint8)
+    else:
+        display_img = np.zeros((img_h, img_w), dtype=np.uint8)
+    return np.stack([display_img]*3, axis=-1)
 
 def config_plot():
     '''
