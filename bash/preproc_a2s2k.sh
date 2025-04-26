@@ -8,5 +8,5 @@ python tools/preproc_a2s2k.py \
     --output_dir ./data_a2s2k \
     --sam2_checkpoint_path ./sam2/checkpoints/sam2.1_hiera_base_plus.pt \
     --patch_size 224 \
-    --num_patches_per_image 5 \
+    --num_patches_per_image 100 \
     --device cuda

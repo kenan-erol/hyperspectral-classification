@@ -95,7 +95,7 @@ if __name__ == '__main__':
     print("Loading patch list and labels from preprocessed data...")
     all_patch_samples = [] # List of (relative_patch_path, label)
     class_labels = set()
-    full_label_file_path = os.path.join(args.data_dir, args.label_file) # Construct full path
+    full_label_file_path = os.path.join(args.label_file) # Construct full path
 
     try:
         with open(full_label_file_path, 'r') as f:

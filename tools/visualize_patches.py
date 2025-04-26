@@ -5,7 +5,7 @@ import glob
 import math
 
 # --- Configuration ---
-PATCHES_DIR = '../data_a2s2k/patches' # Directory containing the .npy patches
+PATCHES_DIR = './data_a2s2k/patches' # Directory containing the .npy patches
 NUM_PATCHES_TO_SHOW = 5 # How many patches to display (adjust as needed)
 # Choose how to select channels for RGB visualization
 # Option 1: Use specific indices (e.g., for R, G, B)

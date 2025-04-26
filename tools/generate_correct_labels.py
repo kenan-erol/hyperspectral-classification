@@ -6,7 +6,7 @@ from tqdm import tqdm # Import tqdm for progress bars
 # --- Configuration ---
 # File containing the ground truth: full/path/patch.npy<separator>label
 # Use the remapped file as the source of truth for labels now
-LABELS_TRUTH_FILE = 'labels_remap.txt' # *** CHANGED: Use the output from the previous step ***
+LABELS_TRUTH_FILE = 'labels.txt' # *** CHANGED: Use the output from the previous step ***
 # The root directory where your patch folders are located (e.g., 'patches/' inside data_processed_patch)
 # Assumes the script is run from 'data_processed_patch' directory
 SEARCH_ROOT_DIR = 'patches' # *** CHANGED: Search within the 'patches' subdirectory ***

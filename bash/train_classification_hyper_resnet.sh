@@ -8,9 +8,8 @@ export CUDA_VISIBLE_DEVICES=0
 
 python src/train_classification_hyper.py \
 --n_batch 25 \
---data_dir './data_processed/' \
---label_file './labels.txt' \
---num_patches_per_image 100 \
+--data_dir './data_processed_patch/patches' \
+--label_file './data_processed_patch/labels_patches.txt' \
 --patch_size 224 \
 --train_split_ratio 0.8 \
 --encoder_type 'resnet18' \
