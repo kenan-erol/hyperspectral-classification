@@ -75,7 +75,7 @@ def main(args):
     # --- End visualization info ---
 
     # --- Construct input label file path using the argument ---
-    input_label_file = os.path.join(args.input_dir, args.input_label_filename)
+    input_label_file = os.path.join(args.input_label_filename)
     # --- End ---
     output_label_file = os.path.join(args.output_dir, 'labels.txt') # Keep output name standard
     output_patches_base_dir = os.path.join(args.output_dir) # Save patches directly in output_dir mirroring structure
