@@ -52,15 +52,17 @@ parser.add_argument('--device',
 args = parser.parse_args()
 
 def run(model, dataloader, device):
-    # ... (Keep the run function logic as is) ...
-    model.eval()
+    model.eval() # Set model to evaluation mode
     all_preds = []
     all_labels = []
-    with torch.no_grad():
+    with torch.no_grad(): # Disable gradient calculations for inference
         for inputs, labels in tqdm(dataloader, desc="Evaluating"):
             inputs = inputs.to(device)
             labels = labels.to(device)
-            outputs = model(inputs)
+            # --- CHANGE THIS LINE ---
+            # outputs = model(inputs) # Incorrect: ClassificationModel is not callable
+            outputs = model.forward(inputs) # Correct: Explicitly call the forward method
+            # --- END CHANGE ---
             _, preds = torch.max(outputs, 1)
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
