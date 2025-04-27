@@ -347,6 +347,9 @@ class PreprocessedPatchDataset(Dataset):
             std = self.transform_std if len(self.transform_std) == self.num_channels else [self.transform_std[0]] * self.num_channels
             return transforms.Compose([
                 transforms.Normalize(mean=mean, std=std),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.RandomVerticalFlip(p=0.5),
+                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
             ])
         return None
 
