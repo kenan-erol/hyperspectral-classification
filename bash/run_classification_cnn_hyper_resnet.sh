@@ -2,10 +2,13 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-python src/run_classification_cnn.py \ TODO: change this
---n_batch 25 \
---dataset 'cifar10' \ TODO: change this
---encoder_type 'resnet18' \
---checkpoint_path 'hyper_checkpoints/hyper_cnn_checkpoint_resnet.pth/model-199.pth' \
---output_path 'outputs/hyper_cnn_output_resnet.png' \
---device 'cuda' \
+python src/run_classification_hyper.py \
+  --n_batch 25 \
+  --data_dir './data_processed_patch/patches' \
+  --label_file './data_processed_patch/labels_patches.txt' \
+  --patch_size 224 \
+  --train_split_ratio 0.8 \
+  --encoder_type 'resnet18' \
+  --num_channels 256 \
+  --checkpoint_path 'hyper_checkpoints/resnet/model-49.pth' \
+  --device 'cuda'

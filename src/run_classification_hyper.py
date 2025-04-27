@@ -85,7 +85,7 @@ if __name__ == '__main__':
     print("Loading patch list and labels from preprocessed data...")
     all_patch_samples = []
     class_labels = set()
-    full_label_file_path = os.path.join(args.data_dir, args.label_file)
+    full_label_file_path = os.path.join(args.label_file)
 
     try:
         with open(full_label_file_path, 'r') as f:
@@ -184,21 +184,41 @@ if __name__ == '__main__':
     )
 
     # Load checkpoint
-    model_checkpoint_file = os.path.join(args.checkpoint_path, 'model_best.pth') # Or specific checkpoint name
+    model_checkpoint_file = os.path.join(args.checkpoint_path) # Or specific checkpoint name
     if not os.path.exists(model_checkpoint_file):
         print(f"Error: Model checkpoint not found at {model_checkpoint_file}")
         exit(1)
 
     try:
-        print(f"Loading state dict from {model_checkpoint_file}")
-        # Load state dict, ensuring it's mapped to the correct device
-        model.load_state_dict(torch.load(model_checkpoint_file, map_location=device))
-        model.to(device) # Ensure model is on the correct device
+        print(f"Loading checkpoint dictionary from {model_checkpoint_file}")
+        # Load the entire checkpoint dictionary, mapping tensors to the correct device
+        checkpoint = torch.load(model_checkpoint_file, map_location=device)
+
+        # Check if the expected keys exist
+        if 'encoder_state_dict' not in checkpoint or 'decoder_state_dict' not in checkpoint:
+             raise KeyError("Checkpoint dictionary missing 'encoder_state_dict' or 'decoder_state_dict'")
+
+        print("Loading state dict into model encoder and decoder...")
+        # Load the state dicts into the respective components
+        model.encoder.load_state_dict(checkpoint['encoder_state_dict'])
+        model.decoder.load_state_dict(checkpoint['decoder_state_dict'])
+
+        # Ensure the model components are on the correct device (redundant if initialized correctly, but safe)
+        model.to(device)
         print("Model loaded successfully.")
-    except Exception as e:
-        print(f"Error loading model checkpoint: {e}")
+
+    except FileNotFoundError:
+        print(f"Error: Model checkpoint file not found at {model_checkpoint_file}")
         exit(1)
-    # --- End Load Model ---
+    except KeyError as e:
+        print(f"Error: Checkpoint file structure incorrect. {e}")
+        exit(1)
+    except Exception as e:
+        # Catch other potential errors like corrupted file, mismatched keys within encoder/decoder
+        print(f"Error loading model checkpoint: {e}")
+        import traceback
+        traceback.print_exc() # Print full traceback for debugging
+        exit(1)
 
 
     # --- Run Evaluation ---
