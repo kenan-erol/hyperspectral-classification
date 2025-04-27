@@ -56,6 +56,9 @@ def add_gaussian_noise(patch, mean=0.0, std_dev=0.1):
 def main(args):
     print(f"Starting augmentation process...")
     print(f"Input directory: {args.input_dir}")
+    # --- Use input_label_filename ---
+    print(f"Input label file: {args.input_label_filename}")
+    # --- End ---
     print(f"Output directory: {args.output_dir}")
     print(f"Noise standard deviation: {args.noise_std_dev}")
     # --- Print visualization info ---
@@ -71,11 +74,13 @@ def main(args):
             os.makedirs(args.visualize_dir, exist_ok=True)
     # --- End visualization info ---
 
-    input_label_file = os.path.join(args.input_dir, 'labels.txt')
-    output_label_file = os.path.join(args.output_dir, 'labels.txt')
-    output_patches_base_dir = os.path.join(args.output_dir, 'patches') # Mirror structure
+    # --- Construct input label file path using the argument ---
+    input_label_file = os.path.join(args.input_dir, args.input_label_filename)
+    # --- End ---
+    output_label_file = os.path.join(args.output_dir, 'labels.txt') # Keep output name standard
+    output_patches_base_dir = os.path.join(args.output_dir) # Save patches directly in output_dir mirroring structure
 
-    os.makedirs(output_patches_base_dir, exist_ok=True)
+    os.makedirs(output_patches_base_dir, exist_ok=True) # Ensure output base exists
 
     augmented_samples = []
     processed_count = 0
@@ -110,7 +115,8 @@ def main(args):
             relative_patch_path, label_str = line.rsplit(' ', 1)
             label = int(label_str)
 
-            # Construct full path to the original patch
+            # Construct full path to the original patch (relative to input_dir)
+            # Assumes relative_patch_path in label file is like 'patches/Drug/...'
             full_input_patch_path = os.path.join(args.input_dir, relative_patch_path)
 
             if not os.path.exists(full_input_patch_path):
@@ -158,7 +164,7 @@ def main(args):
 
 
             # --- Save the augmented patch ---
-            # Define output path, mirroring the subdirectory structure
+            # Define output path, mirroring the subdirectory structure within output_dir
             # relative_patch_path is like 'patches/DrugName/Group/Mxxx/measurement_patch_y.npy'
             output_relative_path = relative_patch_path # Keep the same relative path structure
             full_output_patch_path = os.path.join(args.output_dir, output_relative_path)
@@ -170,7 +176,7 @@ def main(args):
             # Save the augmented patch
             np.save(full_output_patch_path, augmented_patch.astype(np.float32))
 
-            # Store info for the new label file
+            # Store info for the new label file (using the same relative path)
             augmented_samples.append((output_relative_path, label))
             processed_count += 1
 
@@ -204,7 +210,11 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Augment preprocessed hyperspectral patches with noise.")
     parser.add_argument('--input_dir', type=str, required=True,
-                        help='Directory containing the preprocessed patches and labels.txt (output of preproc_patch.py)')
+                        help='Directory containing the patch subdirectories and the input label file.') # Modified help text
+    # --- Add input_label_filename argument ---
+    parser.add_argument('--input_label_filename', type=str, default='labels.txt',
+                        help='Filename of the input label file within input_dir (default: labels.txt)')
+    # --- End ---
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save the augmented patches and the new labels.txt')
     parser.add_argument('--noise_std_dev', type=float, default=0.05,
@@ -230,6 +240,7 @@ if __name__ == "__main__":
 # --- Example Command ---
 # python tools/augment_patches.py \
 #   --input_dir ./data_processed_patch \
+#   --input_label_filename labels_patches.txt \
 #   --output_dir ./data_augmented_noise_0.05 \
 #   --noise_std_dev 0.05 \
 #   --visualize_count 5 \
