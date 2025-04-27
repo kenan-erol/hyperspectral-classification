@@ -3,6 +3,24 @@ import argparse
 import numpy as np
 from tqdm import tqdm
 import random
+import matplotlib.pyplot as plt # <-- Add matplotlib import
+import sys # <-- Add sys import
+
+# --- Add src directory to sys.path if needed ---
+# (Assuming log_utils is in src relative to project root)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(script_dir) # Assumes tools/ is one level down from root
+src_path = os.path.join(project_root, 'src')
+if src_path not in sys.path:
+     sys.path.append(src_path)
+try:
+    # Import your HSI display function
+    from log_utils import hsi_to_rgb_display
+except ImportError:
+    print("Warning: Could not import hsi_to_rgb_display from src.log_utils. Visualization saving will fail.")
+    hsi_to_rgb_display = None
+# --- End Path Setup ---
+
 
 def add_gaussian_noise(patch, mean=0.0, std_dev=0.1):
     """
@@ -40,6 +58,18 @@ def main(args):
     print(f"Input directory: {args.input_dir}")
     print(f"Output directory: {args.output_dir}")
     print(f"Noise standard deviation: {args.noise_std_dev}")
+    # --- Print visualization info ---
+    if args.visualize_count > 0:
+        if not hsi_to_rgb_display:
+            print("Warning: Cannot visualize because hsi_to_rgb_display function is not available.")
+            args.visualize_count = 0 # Disable visualization
+        elif not args.visualize_dir:
+            print("Warning: --visualize_dir not specified. Visualizations will not be saved.")
+            args.visualize_count = 0 # Disable visualization
+        else:
+            print(f"Saving {args.visualize_count} visualization(s) to: {args.visualize_dir}")
+            os.makedirs(args.visualize_dir, exist_ok=True)
+    # --- End visualization info ---
 
     input_label_file = os.path.join(args.input_dir, 'labels.txt')
     output_label_file = os.path.join(args.output_dir, 'labels.txt')
@@ -49,6 +79,7 @@ def main(args):
 
     augmented_samples = []
     processed_count = 0
+    viz_saved_count = 0 # <-- Keep track of saved visualizations
 
     try:
         with open(input_label_file, 'r') as f:
@@ -96,6 +127,36 @@ def main(args):
                 print(f"Warning: Augmentation failed for {full_input_patch_path}, skipping.")
                 continue
 
+            # --- Save Visualization (if requested) ---
+            save_this_viz = viz_saved_count < args.visualize_count and hsi_to_rgb_display is not None
+            if save_this_viz:
+                try:
+                    original_rgb = hsi_to_rgb_display(original_patch)
+                    augmented_rgb = hsi_to_rgb_display(augmented_patch)
+
+                    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+                    axes[0].imshow(original_rgb)
+                    axes[0].set_title(f"Original - Idx {idx}")
+                    axes[0].axis('off')
+
+                    axes[1].imshow(augmented_rgb)
+                    axes[1].set_title(f"Augmented (Noise std={args.noise_std_dev})")
+                    axes[1].axis('off')
+
+                    plt.tight_layout()
+                    base_filename = os.path.splitext(os.path.basename(relative_patch_path))[0]
+                    viz_filename = f"viz_{idx}_{base_filename}.png"
+                    full_viz_path = os.path.join(args.visualize_dir, viz_filename)
+                    plt.savefig(full_viz_path)
+                    plt.close(fig)
+                    viz_saved_count += 1
+                except Exception as viz_e:
+                    print(f"\nWarning: Failed to save visualization for index {idx}: {viz_e}")
+                    if 'fig' in locals() and plt.fignum_exists(fig.number):
+                         plt.close(fig)
+            # --- End Save Visualization ---
+
+
             # --- Save the augmented patch ---
             # Define output path, mirroring the subdirectory structure
             # relative_patch_path is like 'patches/DrugName/Group/Mxxx/measurement_patch_y.npy'
@@ -120,6 +181,8 @@ def main(args):
             continue
 
     print(f"\nFinished augmenting {processed_count} patches.")
+    if viz_saved_count > 0:
+        print(f"Saved {viz_saved_count} visualization(s) to {args.visualize_dir}")
 
     if not augmented_samples:
         print("Error: No patches were successfully augmented.")
@@ -148,6 +211,27 @@ if __name__ == "__main__":
                         help='Standard deviation of the Gaussian noise to add.')
     parser.add_argument('--max_patches', type=int, default=None,
                         help='Maximum number of patches to augment (default: process all)')
+    # --- Add visualization arguments ---
+    parser.add_argument('--visualize_count', type=int, default=0,
+                        help='Number of sample patches to visualize (original vs. augmented). Default: 0')
+    parser.add_argument('--visualize_dir', type=str, default=None,
+                        help='Directory to save visualization plots. Required if visualize_count > 0.')
+    # --- End visualization arguments ---
 
     args = parser.parse_args()
+
+    # --- Add validation for visualization args ---
+    if args.visualize_count > 0 and not args.visualize_dir:
+        parser.error("--visualize_dir is required when --visualize_count > 0")
+    # --- End validation ---
+
     main(args)
+
+# --- Example Command ---
+# python tools/augment_patches.py \
+#   --input_dir ./data_processed_patch \
+#   --output_dir ./data_augmented_noise_0.05 \
+#   --noise_std_dev 0.05 \
+#   --visualize_count 5 \
+#   --visualize_dir ./data_augmented_noise_0.05/visualizations
+# --- End Example Command ---
