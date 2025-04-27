@@ -15,7 +15,7 @@ if src_path not in sys.path:
      sys.path.append(src_path)
 try:
     # Import your HSI display function
-    from log_utils import hsi_to_rgb_display
+    from preproc_patch import hsi_to_rgb_display
 except ImportError:
     print("Warning: Could not import hsi_to_rgb_display from src.log_utils. Visualization saving will fail.")
     hsi_to_rgb_display = None
