@@ -97,9 +97,6 @@ def train(model,
             
             # print(total_loss, "rahh")
             total_loss = total_loss + loss
-            
-            print("\n>>> DEBUG: Breaking after one batch <<<")
-            break
 
         mean_loss = total_loss / float(batch)
 
@@ -113,9 +110,6 @@ def train(model,
         model.log_summary(train_summary_writer, 'train', epoch, images, outputs, labels, 
                           scalars={'loss': mean_loss}
                           )
-        
-        print("\n>>> DEBUG: Breaking after one epoch <<<")
-        break
 
 
     return model
