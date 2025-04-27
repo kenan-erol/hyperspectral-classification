@@ -160,7 +160,7 @@ if __name__ == '__main__':
         transform_std=transform_std,
         target_size=(args.patch_size, args.patch_size),
         save_visualization_path='hyper_checkpoints/resnet/transform_viz', # Optional, can be None
-        save_visualization=True # Set to True if you want to save visualizations
+        num_visualizations_to_save=5
     )
     # --- End Instantiate ---
     print(f"Training dataset size: {len(train_dataset)} patches")
