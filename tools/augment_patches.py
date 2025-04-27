@@ -1,14 +1,14 @@
-import os
-import numpy as np
-import torch
-import torch.nn.functional as F
-import argparse
-import random
-import traceback
-from tqdm import tqdm
-import matplotlib.pyplot as plt # <-- Add matplotlib import
-import sys # <-- Add sys import
-from PIL import Image, ImageEnhance # <-- Add PIL imports for color jitter/hue
+# ... (other imports) ...
+import matplotlib.pyplot as plt # <-- Make sure this is imported
+import random # <-- Make sure this is imported
+from PIL import Image, ImageEnhance # <-- Make sure these are imported
+import sys # <-- Make sure this is imported
+import os # <-- Make sure this is imported
+import numpy as np # <-- Make sure this is imported
+import torch # <-- Make sure this is imported
+import torch.nn.functional as F # <-- Make sure this is imported
+from tqdm import tqdm # <-- Make sure this is imported
+import argparse # <-- Make sure this is imported
 
 # --- Add src directory to sys.path if needed ---
 # (Assuming log_utils is in src relative to project root)
@@ -17,13 +17,6 @@ project_root = os.path.dirname(script_dir) # Assumes tools/ is one level down fr
 src_path = os.path.join(project_root, 'src')
 if src_path not in sys.path:
      sys.path.append(src_path)
-# --- We will define our own visualization function locally ---
-# try:
-#     # Import your HSI display function
-#     from preproc_patch import hsi_to_rgb_display # Keep for reference if needed, but use local one
-# except ImportError:
-#     print("Warning: Could not import hsi_to_rgb_display from src.log_utils. Visualization saving will fail.")
-#     hsi_to_rgb_display = None
 # --- End Path Setup ---
 
 # --- New HSI to RGB Visualization Function ---
@@ -52,29 +45,43 @@ def visualize_hsi_patch(hsi_patch_np):
     # Handle case with zero channels
     if img_c == 0:
         print("Warning: HSI patch has zero channels.")
+        # Return a black image of the correct size
         return np.zeros((img_h, img_w, 3), dtype=np.uint8)
 
     # Calculate the mean across the spectral dimension
     try:
-        # Use float64 for intermediate mean calculation to avoid potential overflow/precision issues
-        display_img = np.mean(hsi_patch_np, axis=2, dtype=np.float64)
+        # Use nanmean to handle potential NaNs if they exist in data
+        display_img = np.nanmean(hsi_patch_np, axis=2)
     except Exception as e:
-        print(f"Warning: Error calculating mean in visualize_hsi_patch: {e}")
-        return np.zeros((img_h, img_w, 3), dtype=np.uint8) # Return black image on error
+        print(f"Warning: Error calculating mean for visualization: {e}")
+        return np.zeros((img_h, img_w, 3), dtype=np.uint8) # Return black on error
+
+    # Check if result is all NaN (can happen if input was all NaN)
+    if np.all(np.isnan(display_img)):
+        print("Warning: Mean calculation resulted in all NaNs.")
+        return np.zeros((img_h, img_w, 3), dtype=np.uint8)
 
     # Normalize the mean image to 0-255 range
-    min_val = np.min(display_img)
-    max_val = np.max(display_img)
+    # Use nanmin/nanmax to ignore NaNs during normalization
+    min_val = np.nanmin(display_img)
+    max_val = np.nanmax(display_img)
 
     if max_val > min_val:
-        # Perform normalization robustly
-        display_img = (display_img - min_val) / (max_val - min_val) * 255.0
+        # Normalize, converting NaNs to 0 after normalization (or another value if preferred)
+        display_img = (display_img - min_val) / (max_val - min_val)
+        display_img = np.nan_to_num(display_img, nan=0.0) # Convert NaNs to 0
+        display_img = (display_img * 255)
     elif max_val == min_val:
-        # Handle constant value image - map to mid-gray or black/white
-        # Mapping to 0 avoids potential issues if the constant value was negative after mean
-        display_img = np.zeros((img_h, img_w), dtype=np.float64)
-    else: # Should not happen if min/max are calculated correctly, but as a fallback
-        display_img = np.zeros((img_h, img_w), dtype=np.float64)
+        # Handle constant value image (avoid division by zero)
+        # Check if the constant value is NaN
+        if np.isnan(min_val):
+             display_img = np.zeros((img_h, img_w)) # All NaN -> black
+        else:
+             # Assign a mid-gray value, or scale if range is known
+             # For simplicity, let's make it gray
+             display_img = np.full((img_h, img_w), 128)
+    else: # min_val > max_val should not happen with nanmin/nanmax unless all NaN
+        display_img = np.zeros((img_h, img_w)) # Fallback to black
 
     # Convert to uint8 and stack to create 3-channel RGB
     display_img_uint8 = display_img.astype(np.uint8)
@@ -91,7 +98,8 @@ def add_gaussian_noise(patch, mean=0.0, std_dev=0.1):
     Assumes patch is a numpy array (H, W, C) with float values.
     """
     if patch is None or patch.size == 0:
-        return None
+        print("Warning: Attempted to add noise to an empty or None patch.")
+        return patch # Return original if invalid
 
     # Generate noise with the same shape as the patch
     noise = np.random.normal(mean, std_dev, patch.shape).astype(patch.dtype)
@@ -100,21 +108,13 @@ def add_gaussian_noise(patch, mean=0.0, std_dev=0.1):
     noisy_patch = patch + noise
 
     # Clip values to maintain a reasonable range.
-    # Since HSI data might not be normalized to [0,1] and can have negative values
-    # after processing, a simple clip to [0, max] might be incorrect.
-    # A more robust approach might involve clipping based on original range percentiles,
-    # but for simplicity, we'll just ensure values don't become excessively large/small
-    # relative to the original range, or simply clip >= 0 if the original was non-negative.
     patch_min = np.min(patch) if patch.size > 0 else 0
-    # patch_max = np.max(patch) if patch.size > 0 else 1 # Max might not be meaningful
 
     if patch_min >= 0:
-        # If original data was non-negative, keep augmented data non-negative
+        # If original data was non-negative, clip noisy result at 0
         noisy_patch = np.clip(noisy_patch, 0, None)
     # else:
         # If original data could be negative, avoid aggressive clipping unless bounds are known.
-        # Consider clipping based on N standard deviations from original mean if needed.
-        # For now, no clipping if original could be negative.
         # pass
 
     return noisy_patch
@@ -151,23 +151,17 @@ def apply_random_hue_shift(image_pil, max_hue_delta=0.1):
 
     try:
         # Convert PIL image to HSV numpy array
-        img_hsv = np.array(image_pil.convert('HSV'))
-
-        # Calculate hue shift amount (delta is in range [0, 255] for uint8 HSV)
-        hue_delta = int(random.uniform(-max_hue_delta, max_hue_delta) * 255)
-
-        # Apply hue shift with wrap-around using modulo arithmetic
-        # Ensure intermediate calculations use a larger type to prevent overflow before modulo
-        hue_channel = img_hsv[:, :, 0].astype(np.int32)
-        shifted_hue = (hue_channel + hue_delta) % 256 # Modulo 256 for uint8 range
-        img_hsv[:, :, 0] = shifted_hue.astype(np.uint8)
-
-        # Convert back to PIL Image
-        image_pil = Image.fromarray(img_hsv, 'HSV').convert('RGB')
+        hsv = np.array(image_pil.convert('HSV'))
+        # Apply hue shift (scale 0-255 for uint8)
+        hue_shift = random.uniform(-max_hue_delta, max_hue_delta) * 255
+        # Add shift and wrap around using modulo arithmetic
+        hsv[..., 0] = (hsv[..., 0].astype(np.float32) + hue_shift) % 255
+        hsv = hsv.astype(np.uint8)
+        # Convert back to PIL RGB
+        image_pil = Image.fromarray(hsv, 'HSV').convert('RGB')
     except Exception as e:
-        print(f"Warning: Error applying hue shift: {e}")
-        # Return original image if conversion fails
-        return image_pil.convert('RGB') # Ensure it's RGB
+        print(f"Warning: Failed to apply hue shift: {e}")
+        # Return original image on error
 
     return image_pil
 # --- End New Augmentation Functions ---
@@ -181,13 +175,13 @@ def main(args):
     print(f"Noise standard deviation: {args.noise_std_dev}")
     # --- Print visualization info ---
     if args.visualize_count > 0:
-        if not args.visualize_dir:
-            print("Warning: --visualize_dir not specified. Visualizations will not be saved.")
-            args.visualize_count = 0 # Disable visualization
-        else:
-            print(f"Saving {args.visualize_count} visualization(s) to: {args.visualize_dir}")
-            print(f"Visualization includes noise, random jitter, and hue shift.")
+        print(f"Visualizing {args.visualize_count} samples.")
+        if args.visualize_dir:
             os.makedirs(args.visualize_dir, exist_ok=True)
+            print(f"Visualization directory: {args.visualize_dir}")
+        else:
+            print("Error: --visualize_dir is required when --visualize_count > 0.")
+            exit(1)
     # --- End visualization info ---
 
     input_label_file = os.path.join(args.input_label_filename)
@@ -211,14 +205,12 @@ def main(args):
     num_to_process = len(lines)
     indices_to_process = list(range(len(lines)))
     if args.max_patches is not None and args.max_patches > 0:
-        if args.max_patches < len(lines):
-            print(f"Processing a random subset of {args.max_patches} patches.")
-            indices_to_process = random.sample(range(len(lines)), args.max_patches)
-            num_to_process = args.max_patches
-        else:
-            print(f"Processing all {len(lines)} patches (max_patches >= total patches).")
+        num_to_process = min(len(lines), args.max_patches)
+        # Sample random indices if processing a subset
+        indices_to_process = random.sample(range(len(lines)), num_to_process)
+        print(f"Processing a random subset of {num_to_process} patches.")
     else:
-        print(f"Processing all {len(lines)} patches.")
+        print(f"Processing all {num_to_process} patches.")
 
 
     for idx in tqdm(indices_to_process, desc="Augmenting Patches"):
@@ -226,117 +218,109 @@ def main(args):
         if not line: continue
 
         try:
-            relative_patch_path, label_str = line.rsplit(' ', 1)
+            relative_path, label_str = line.rsplit(' ', 1)
             label = int(label_str)
+            # Construct full path relative to input_dir
+            full_patch_path = os.path.join(args.input_dir, relative_path)
 
-            # Construct full path to the original patch (relative to input_dir)
-            # Assumes relative_patch_path in label file is like 'patches/Drug/...'
-            full_input_patch_path = os.path.join(args.input_dir, relative_patch_path)
-
-            if not os.path.exists(full_input_patch_path):
-                print(f"Warning: Original patch not found: {full_input_patch_path}, skipping.")
+            if not os.path.exists(full_patch_path):
+                print(f"Warning: Patch file not found: {full_patch_path}. Skipping.")
                 continue
 
             # Load the original patch
-            original_patch = np.load(full_input_patch_path)
+            patch_np = np.load(full_patch_path)
+            if patch_np.dtype == np.float64: patch_np = patch_np.astype(np.float32)
 
-            # --- Apply Gaussian noise augmentation to the raw HSI data ---
-            # This is the primary augmentation saved to the .npy file.
-            augmented_patch_hsi = add_gaussian_noise(original_patch, std_dev=args.noise_std_dev)
+            # Apply Gaussian noise to the raw HSI data
+            noisy_patch = add_gaussian_noise(patch_np, std_dev=args.noise_std_dev)
 
-            if augmented_patch_hsi is None:
-                print(f"Warning: Noise augmentation failed for {full_input_patch_path}, skipping.")
-                continue
+            # Define output path for the noisy patch
+            output_patch_path = os.path.join(output_patches_base_dir, relative_path)
+            os.makedirs(os.path.dirname(output_patch_path), exist_ok=True)
 
-            # --- Save Visualization (if requested) ---
-            save_this_viz = viz_saved_count < args.visualize_count
-            if save_this_viz:
-                try:
-                    # Convert original and augmented HSI to RGB for display using the local function
-                    original_rgb = visualize_hsi_patch(original_patch)
-                    augmented_rgb_noise_only = visualize_hsi_patch(augmented_patch_hsi) # Visualize effect of noise
+            # Save the noisy patch
+            np.save(output_patch_path, noisy_patch)
 
-                    if original_rgb is not None and augmented_rgb_noise_only is not None:
-                        # --- Apply Jitter and Hue Shift ONLY to the augmented visualization ---
-                        # Convert augmented RGB to PIL Image for these transforms
-                        augmented_pil = Image.fromarray(augmented_rgb_noise_only)
-
-                        # Apply color jitter (brightness, contrast, saturation)
-                        augmented_pil_jittered = apply_random_color_jitter(augmented_pil)
-
-                        # Apply hue shift
-                        augmented_pil_final_viz = apply_random_hue_shift(augmented_pil_jittered)
-
-                        # Convert final visualization back to numpy array
-                        augmented_rgb_final_viz = np.array(augmented_pil_final_viz)
-                        # --- End Jitter/Hue application for visualization ---
-
-                        # Create plot
-                        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-                        axes[0].imshow(original_rgb)
-                        axes[0].set_title('Original Patch (RGB Vis)')
-                        axes[0].axis('off')
-
-                        axes[1].imshow(augmented_rgb_final_viz)
-                        axes[1].set_title('Augmented Vis (Noise+Jitter+Hue)')
-                        axes[1].axis('off')
-
-                        plt.suptitle(f"Sample {viz_saved_count}: {os.path.basename(relative_patch_path)}\nLabel: {label}, Noise StdDev: {args.noise_std_dev}", fontsize=10)
-                        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
-
-                        # Construct visualization filename
-                        base_filename = os.path.splitext(os.path.basename(relative_patch_path))[0]
-                        viz_filename = os.path.join(args.visualize_dir, f"{base_filename}_augmentation_viz_{viz_saved_count}.png")
-                        plt.savefig(viz_filename, dpi=150)
-                        plt.close(fig)
-                        viz_saved_count += 1
-                    else:
-                        print(f"Warning: Could not generate RGB for visualization for {relative_patch_path}")
-
-                except Exception as viz_e:
-                    print(f"\nError creating visualization for {relative_patch_path}: {viz_e}")
-                    if 'fig' in locals() and plt.fignum_exists(fig.number): plt.close(fig) # Close plot if open
-            # --- End Save Visualization ---
-
-
-            # --- Save the augmented HSI patch (with noise only) ---
-            # Define output path, mirroring the subdirectory structure within output_dir
-            output_relative_path = relative_patch_path # Keep the same relative path structure
-            full_output_patch_path = os.path.join(args.output_dir, output_relative_path)
-
-            # Create the necessary subdirectories in the output folder
-            output_subdir = os.path.dirname(full_output_patch_path)
-            os.makedirs(output_subdir, exist_ok=True)
-
-            # Save the augmented patch (ensure float32)
-            np.save(full_output_patch_path, augmented_patch_hsi.astype(np.float32))
-
-            # Store info for the new label file (using the same relative path)
-            augmented_samples.append((output_relative_path, label))
+            # Add entry for the new label file (using the same relative path)
+            augmented_samples.append((relative_path, label))
             processed_count += 1
 
+            # --- Visualization Logic ---
+            if args.visualize_count > 0 and viz_saved_count < args.visualize_count:
+                try:
+                    # Convert original and noisy HSI patches to RGB for display
+                    original_rgb = visualize_hsi_patch(patch_np)
+                    noisy_rgb = visualize_hsi_patch(noisy_patch)
+
+                    if original_rgb is not None and noisy_rgb is not None:
+                        # --- Apply visualization-only augmentations (jitter, hue) ---
+                        # Convert noisy_rgb to PIL image to apply these transforms
+                        noisy_pil = Image.fromarray(noisy_rgb)
+                        noisy_jittered_pil = apply_random_color_jitter(noisy_pil)
+                        noisy_jittered_hue_pil = apply_random_hue_shift(noisy_jittered_pil)
+                        # Convert back to numpy array for plotting
+                        noisy_augmented_vis = np.array(noisy_jittered_hue_pil)
+                        # --- End visualization-only augmentations ---
+
+                        # Create side-by-side plot
+                        fig, axes = plt.subplots(1, 2, figsize=(10, 5)) # 1 row, 2 columns
+
+                        # Plot original patch
+                        axes[0].imshow(original_rgb)
+                        axes[0].set_title("Original Patch")
+                        axes[0].axis('off')
+
+                        # Plot augmented patch (noise + vis-only jitter/hue)
+                        axes[1].imshow(noisy_augmented_vis)
+                        axes[1].set_title(f"Augmented (Noise={args.noise_std_dev:.2f} + Jitter/Hue)")
+                        axes[1].axis('off')
+
+                        plt.suptitle(f"Patch: {os.path.basename(relative_path)}", fontsize=10)
+                        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
+
+                        # Save the plot
+                        vis_filename = os.path.join(args.visualize_dir, f"{os.path.splitext(os.path.basename(relative_path))[0]}_augmentation_vis.png")
+                        plt.savefig(vis_filename, dpi=150)
+                        plt.close(fig) # Close the figure to free memory
+                        viz_saved_count += 1
+                    else:
+                        print(f"Warning: Skipping visualization for {relative_path} due to conversion error.")
+
+                except Exception as vis_e:
+                    print(f"Error during visualization for {relative_path}: {vis_e}")
+                    if 'fig' in locals() and plt.fignum_exists(fig.number):
+                         plt.close(fig) # Ensure figure is closed on error
+            # --- End Visualization Logic ---
+
         except Exception as e:
-            print(f"\nError processing line '{line}': {e}")
+            import traceback
+            print(f"\n--- ERROR ---")
+            print(f"Error processing line '{line}' (Index {idx}):")
+            print(f"Relative Path: {relative_path if 'relative_path' in locals() else 'N/A'}")
+            print(f"Exception Type: {type(e)}")
+            print(f"Exception Message: {e}")
+            print("Traceback:")
             traceback.print_exc()
-            continue
+            print(f"-------------")
+            continue # Skip to the next patch
 
     print(f"\nFinished augmenting {processed_count} patches.")
     if viz_saved_count > 0:
-        print(f"Saved {viz_saved_count} visualization(s) to {args.visualize_dir}")
+        print(f"Saved {viz_saved_count} visualization comparisons to {args.visualize_dir}")
 
     if not augmented_samples:
-        print("Error: No patches were successfully augmented.")
-        exit(1)
+        print("Warning: No patches were successfully augmented.")
+        # Decide whether to exit or continue to save an empty label file
+        # exit(1) # Optional: exit if no patches were processed
 
     # Save the new label file
     print(f"Saving new label file to {output_label_file}")
     try:
-        # Sort lines for consistency before writing
+        # Sort samples for consistency before saving
         augmented_samples.sort()
         with open(output_label_file, 'w') as f:
             for rel_path, lbl in augmented_samples:
-                 # Use as_posix() for consistent forward slashes in the label file
-                 f.write(f"{Path(rel_path).as_posix()} {lbl}\n")
+                f.write(f"{rel_path} {lbl}\n")
     except Exception as e:
         print(f"Error writing new label file {output_label_file}: {e}")
         exit(1)
@@ -347,9 +331,9 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Augment preprocessed hyperspectral patches with noise.")
     parser.add_argument('--input_dir', type=str, required=True,
-                        help='Directory containing the patch subdirectories.') # Modified help text
+                        help='Base directory containing the patch subdirectories (e.g., ./data_processed_patch).') # Modified help text
     parser.add_argument('--input_label_filename', type=str, default='labels.txt',
-                        help='Filename of the input label file relative to the project root or an absolute path (default: labels.txt)') # Clarified path expectation
+                        help='Filename of the input label file relative to the project root or an absolute path (e.g., labels_patches.txt)') # Clarified path expectation
     parser.add_argument('--output_dir', type=str, required=True,
                         help='Directory to save the augmented patches and the new labels.txt')
     parser.add_argument('--noise_std_dev', type=float, default=0.05,
@@ -365,12 +349,14 @@ if __name__ == "__main__":
 
     # --- Add validation for visualization args ---
     if args.visualize_count > 0 and not args.visualize_dir:
-        parser.error("--visualize_dir is required when --visualize_count > 0")
+        print("Error: --visualize_dir must be specified when --visualize_count > 0")
+        exit(1)
     # --- End validation ---
 
     # --- Resolve input label file path ---
     # Check if it's absolute, otherwise assume relative to project root
     if not os.path.isabs(args.input_label_filename):
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) # Assumes script is in tools/
         args.input_label_filename = os.path.join(project_root, args.input_label_filename)
         print(f"Resolved input label file path to: {args.input_label_filename}")
     # --- End resolve ---
@@ -384,6 +370,6 @@ if __name__ == "__main__":
 #   --input_label_filename labels_patches.txt \
 #   --output_dir ./data_augmented_noise_0.05 \
 #   --noise_std_dev 0.05 \
-#   --visualize_count 5 \
+#   --visualize_count 10 \
 #   --visualize_dir ./data_augmented_noise_0.05/visualizations
 # --- End Example Command ---
