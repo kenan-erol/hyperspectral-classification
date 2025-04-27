@@ -256,7 +256,16 @@ if __name__ == '__main__':
         plt.xlabel('Predicted Label')
         plt.ylabel('True Label')
         plt.title('Confusion Matrix')
-        plot_path = os.path.join(args.checkpoint_path, 'confusion_matrix.png')
+
+        # --- CHANGE HERE ---
+        # Get the directory part of the checkpoint path
+        checkpoint_dir = os.path.dirname(args.checkpoint_path)
+        # Ensure the directory exists (optional but good practice)
+        os.makedirs(checkpoint_dir, exist_ok=True)
+        # Join the directory with the filename
+        plot_path = os.path.join(checkpoint_dir, 'confusion_matrix.png')
+        # --- END CHANGE ---
+
         plt.savefig(plot_path)
         print(f"Confusion matrix plot saved to {plot_path}")
         plt.close()
