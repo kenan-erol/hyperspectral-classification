@@ -16,6 +16,9 @@ import hydra # Add hydra import
 import hydra.utils
 from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
 
+from log_utils import hsi_to_rgb_display
+import matplotlib.pyplot as plt
+
 import statistics
 import copy
 
@@ -319,6 +322,8 @@ class PreprocessedPatchDataset(Dataset):
                  data_dir,      # Base directory where patches are saved (e.g., './data_processed_patch/')
                  samples,       # List of (relative_patch_path, label) tuples
                  num_channels=0, # Needed for transform
+                 save_visualization_path=None, # e.g., 'hyper_checkpoints/resnet/visualizations/'
+                 num_visualizations_to_save=0,   # How many initial samples to visualize
                  transform_mean=None,
                  transform_std=None,
                  target_size=(224, 224)): # Ensure patches are resized if needed
@@ -329,6 +334,14 @@ class PreprocessedPatchDataset(Dataset):
         self.transform_std = transform_std
         self.target_size = target_size
         self.transform = self._create_transform()
+        
+        # --- Store Visualization Params ---
+        self.save_visualization_path = save_visualization_path
+        self.num_visualizations_to_save = num_visualizations_to_save
+        if self.save_visualization_path:
+            os.makedirs(self.save_visualization_path, exist_ok=True) # Create dir if needed
+        # --- End Store Visualization Params ---
+        
         if not self.samples:
              print("Warning: PreprocessedPatchDataset initialized with zero samples.")
         else:
@@ -349,7 +362,8 @@ class PreprocessedPatchDataset(Dataset):
                 transforms.Normalize(mean=mean, std=std),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomVerticalFlip(p=0.5),
-                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
+                # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
+                RandomIntensityScale(min_factor=0.8, max_factor=1.2)
             ])
         return None
 
@@ -371,22 +385,79 @@ class PreprocessedPatchDataset(Dataset):
             # Ensure correct format (HWC -> CHW tensor)
             if patch_np.ndim == 2: # Handle potential grayscale if needed
                 patch_np = np.expand_dims(patch_np, axis=-1)
-            patch_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
+            # patch_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
+            
+            original_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
 
-            # Resize if necessary (should ideally be done in preprocessing)
-            if patch_tensor.shape[1:] != self.target_size:
+            # --- Prepare Original for Visualization (BEFORE transform) ---
+            original_rgb_for_viz = None
+            save_this_sample = self.save_visualization_path and idx < self.num_visualizations_to_save and hsi_to_rgb_display is not None
+            if save_this_sample:
+                try:
+                    # Resize original tensor if needed for consistent viz size
+                    if original_tensor.shape[1:] != self.target_size:
+                        original_tensor_resized_viz = F.interpolate(
+                            original_tensor.unsqueeze(0), size=self.target_size, mode='bilinear', align_corners=False
+                        ).squeeze(0)
+                    else:
+                        original_tensor_resized_viz = original_tensor
+                    # Convert resized original tensor back to HWC numpy for display
+                    original_np_hwc_viz = np.transpose(original_tensor_resized_viz.numpy(), (1, 2, 0))
+                    original_rgb_for_viz = hsi_to_rgb_display(original_np_hwc_viz)
+                except Exception as viz_e:
+                    print(f"Warning: Failed to create original RGB for visualization (idx {idx}): {viz_e}")
+                    save_this_sample = False # Don't save if original fails
+            # --- End Prepare Original ---
+
+            # Resize tensor before applying transforms if needed
+            if original_tensor.shape[1:] != self.target_size:
                  patch_tensor = F.interpolate(
-                     patch_tensor.unsqueeze(0),
+                     original_tensor.unsqueeze(0),
                      size=self.target_size,
                      mode='bilinear',
                      align_corners=False
                  ).squeeze(0)
+            else:
+                 patch_tensor = original_tensor # Use original if already correct size
 
-            # Apply normalization transform
+            # Apply normalization and augmentation transforms
+            transformed_tensor = patch_tensor # Start with the (potentially resized) tensor
             if self.transform:
-                patch_tensor = self.transform(patch_tensor)
+                transformed_tensor = self.transform(transformed_tensor.clone()) # Use clone if transforms modify inplace
 
-            return patch_tensor, label
+            # --- Save Visualization (if requested and original viz worked) ---
+            if save_this_sample:
+                try:
+                    # Convert transformed tensor back to HWC numpy for display
+                    transformed_np_hwc_viz = np.transpose(transformed_tensor.numpy(), (1, 2, 0))
+                    transformed_rgb_for_viz = hsi_to_rgb_display(transformed_np_hwc_viz)
+
+                    # Plot side-by-side
+                    fig, axes = plt.subplots(1, 2, figsize=(12, 6))
+                    axes[0].imshow(original_rgb_for_viz)
+                    axes[0].set_title(f"Original (Resized) - Idx {idx}")
+                    axes[0].axis('off')
+
+                    axes[1].imshow(transformed_rgb_for_viz)
+                    axes[1].set_title(f"After Transforms - Idx {idx}")
+                    axes[1].axis('off')
+                    
+                    plt.tight_layout()
+                    # Construct filename
+                    base_filename = os.path.splitext(os.path.basename(relative_path))[0]
+                    save_filename = f"viz_{idx}_{base_filename}.png"
+                    full_save_path = os.path.join(self.save_visualization_path, save_filename)
+                    plt.savefig(full_save_path)
+                    plt.close(fig) # Close figure to free memory
+                    # print(f"Saved visualization for index {idx} to {full_save_path}") # Optional log
+                except Exception as viz_e:
+                    print(f"Warning: Failed to save visualization for index {idx}: {viz_e}")
+                    if 'fig' in locals() and plt.fignum_exists(fig.number): # Attempt to close figure on error
+                         plt.close(fig)
+            # --- End Save Visualization ---
+
+            # Return the transformed tensor for training/evaluation
+            return transformed_tensor, label
 
         except FileNotFoundError:
             print(f"Error: Patch file not found: {full_patch_path} for index {idx}")
@@ -407,3 +478,12 @@ def collate_fn_skip_none_preprocessed(batch):
         return torch.tensor([]), torch.tensor([]) # Match expected output structure (tensors, labels)
     # Use default collate for the filtered batch
     return torch.utils.data.dataloader.default_collate(batch)
+
+class RandomIntensityScale:
+    def __init__(self, min_factor=0.8, max_factor=1.2):
+        self.min_factor = min_factor
+        self.max_factor = max_factor
+
+    def __call__(self, tensor):
+        factor = random.uniform(self.min_factor, self.max_factor)
+        return tensor * factor

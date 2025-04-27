@@ -155,7 +155,9 @@ if __name__ == '__main__':
         num_channels=args.num_channels,
         transform_mean=transform_mean,
         transform_std=transform_std,
-        target_size=(args.patch_size, args.patch_size)
+        target_size=(args.patch_size, args.patch_size),
+        save_visualization_path='hyper_checkpoints/resnet/transform_viz', # Optional, can be None
+        save_visualization=True # Set to True if you want to save visualizations
     )
     # --- End Instantiate ---
     print(f"Test dataset size: {len(test_dataset)} patches")

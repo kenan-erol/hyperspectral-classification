@@ -108,8 +108,8 @@ if __name__ == '__main__':
                     label = int(label_str)
 
                     # Basic check if relative path seems valid (starts with 'patches/')
-                    if not relative_path.startswith('patches' + os.path.sep):
-                         print(f"Warning: Line {i+1}: Relative path '{relative_path}' might be incorrect. Expected to start with 'patches/'.")
+                    # if not relative_path.startswith('patches' + os.path.sep):
+                    #      print(f"Warning: Line {i+1}: Relative path '{relative_path}' might be incorrect. Expected to start with 'patches/'.")
 
                     all_patch_samples.append((relative_path, label))
                     class_labels.add(label)
@@ -158,7 +158,9 @@ if __name__ == '__main__':
         num_channels=args.num_channels,
         transform_mean=transform_mean,
         transform_std=transform_std,
-        target_size=(args.patch_size, args.patch_size)
+        target_size=(args.patch_size, args.patch_size),
+        save_visualization_path='hyper_checkpoints/resnet/transform_viz', # Optional, can be None
+        save_visualization=True # Set to True if you want to save visualizations
     )
     # --- End Instantiate ---
     print(f"Training dataset size: {len(train_dataset)} patches")
@@ -281,7 +283,8 @@ if __name__ == '__main__':
     model.to(args.device)
     print("Model initialized.")
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=1e-4)
+    print("Optimizer initialized.")
 
     print("Starting training...")
     train(
