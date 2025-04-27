@@ -22,7 +22,8 @@ import matplotlib.pyplot as plt
 import statistics
 import copy
 
-plt.use('Agg') # disable interactivity for train
+import matplotlib
+matplotlib.use('Agg') # disable interactivity for train
 
 MIN_PILL_AREA = 50
 MAX_PILL_AREA = 170
