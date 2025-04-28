@@ -18,5 +18,5 @@ python src/train_classification_hyper.py \
 --learning_rate 0.001 \
 --learning_rate_decay 0.5 \
 --learning_rate_period 10 \
---checkpoint_path 'hyper_checkpoints/vgg/' \
+--checkpoint_path 'hyper_checkpoints/vgg_rf/' \
 --device 'cuda'
