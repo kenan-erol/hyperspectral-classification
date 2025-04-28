@@ -162,3 +162,7 @@ Let's clarify the visualization approaches:
 
 preproc_patch.py Visualization (#attachment=preproc_patch.py "Excerpt from preproc_patch.py, lines 271 to 298"): This script visualizes the entire original hyperspectral image (converted to RGB using hsi_to_rgb_display) and draws a red bounding box showing where the patch was extracted. This is useful for verifying the patch location within the larger image.
 augment_patches.py Visualization (#attachment=augment_patches.py "Excerpt from augment_patches.py, lines 138 to 163"): This script visualizes the extracted patch itself before augmentation and the same patch after augmentation (e.g., adding noise), displaying them side-by-side. This is useful for verifying the effect of the augmentation.
+
+makes sense bc zoomed all the way in
+
+if no significant results, increase the transformations
