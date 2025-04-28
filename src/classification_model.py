@@ -32,8 +32,11 @@ class ClassificationModel(object):
 
         if encoder_type == 'vggnet11':
             self.encoder = networks.VGGNet11Encoder(input_channels=input_channels, n_filters=[64, 128, 256, 512, 512])
+            
+            flattened_feature_size = 512 * 7 * 7
+            
             self.decoder = torch.nn.Sequential(
-                                               torch.nn.Flatten(), torch.nn.Linear(512, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, num_classes))
+                                               torch.nn.Flatten(), torch.nn.Linear(flattened_feature_size, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, 4096), torch.nn.ReLU(inplace=True), torch.nn.Linear(4096, num_classes))
 
         elif encoder_type == 'resnet18':
             self.encoder = networks.ResNet18Encoder(input_channels=input_channels, n_filters=[64, 128, 256, 512, 512], use_batch_norm=True) # this needs to change for 3d
