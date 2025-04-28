@@ -166,3 +166,21 @@ augment_patches.py Visualization (#attachment=augment_patches.py "Excerpt from a
 makes sense bc zoomed all the way in
 
 if no significant results, increase the transformations
+
+# Classifying Different Drugs
+preproc patch to extract patches from the hyperspectral images
+
+train classification model with resnet and vgg
+
+results:
+resnet: 0.95? 099 rn
+vgg: 0.95? 099 vgg
+
+# Real fake
+augment patches to cfreate fake data
+
+train with resnet vgg
+
+results:
+resnet: 0.95? 099 rn
+vgg: 0.95? 099 vgg
