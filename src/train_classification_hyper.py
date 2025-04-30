@@ -134,15 +134,27 @@ if __name__ == '__main__':
     patch_paths = [s[0] for s in all_patch_samples]
     patch_labels = [s[1] for s in all_patch_samples]
 
-    if args.train_split_ratio < 1.0:
-        train_paths, _, train_labels, _ = train_test_split(
+    if args.train_split_ratio < 1.0 and args.train_split_ratio > 0.0:
+        train_paths, test_paths, train_labels, test_labels = train_test_split(
             patch_paths, patch_labels,
             train_size=args.train_split_ratio,
-            random_state=42,
+            random_state=42, # Use a fixed random state for reproducibility
             stratify=patch_labels # Stratify based on patch labels
         )
         train_samples = list(zip(train_paths, train_labels))
-        print(f"Splitting patches: Train={len(train_samples)} patches")
+        test_samples = list(zip(test_paths, test_labels)) # Store the test samples
+        print(f"Split data: {len(train_samples)} training patches, {len(test_samples)} test patches.")
+
+        # --- SAVE THE TEST SET LIST ---
+        test_set_file_path = os.path.join(args.checkpoint_path, 'test_samples.txt')
+        print(f"Saving test set file list to: {test_set_file_path}")
+        try:
+            with open(test_set_file_path, 'w') as f_test:
+                for path, label in test_samples:
+                    f_test.write(f"{path} {label}\n")
+        except IOError as e:
+            print(f"Error saving test set file list: {e}")
+        # --- END SAVE TEST SET ---
     else:
         # Use all patches for training if ratio is 1.0 or more
         train_samples = all_patch_samples

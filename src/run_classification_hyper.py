@@ -32,8 +32,8 @@ parser.add_argument('--label_file',
 # --- End Remove ---
 parser.add_argument('--patch_size',
     type=int, default=224, help='Expected size of image patches')
-parser.add_argument('--train_split_ratio', # Keep this to identify the TEST split
-    type=float, default=0.8, help='Proportion of PATCHES used for training (to determine test set)')
+# parser.add_argument('--train_split_ratio', # Keep this to identify the TEST split
+#     type=float, default=0.8, help='Proportion of PATCHES used for training (to determine test set)')
 
 # Network settings
 parser.add_argument('--encoder_type',
@@ -83,65 +83,98 @@ if __name__ == '__main__':
         print("Using CPU.")
     # --- End Device Setup ---
 
-    # --- Load Preprocessed Labels ---
-    print("Loading patch list and labels from preprocessed data...")
-    all_patch_samples = []
-    class_labels = set()
-    full_label_file_path = os.path.join(args.label_file)
-
+    # --- Load Class Labels from Original Label File ---
+    # We still need the original label file to know the number of classes
+    print(f"Reading original label file {args.label_file} to determine number of classes...")
+    class_labels_set = set()
     try:
-        with open(full_label_file_path, 'r') as f:
-            for i, line in enumerate(f):
+        with open(args.label_file, 'r') as f:
+             for line in f:
                 line = line.strip()
                 if not line: continue
-                try:
-                    relative_path, label_str = line.rsplit(' ', 1)
-                    label = int(label_str)
-                    all_patch_samples.append((relative_path, label))
-                    class_labels.add(label)
-                except ValueError as e:
-                    print(f"Warning: Skipping malformed line {i+1} in {full_label_file_path}: '{line}' - Reason: {e}")
+                parts = line.split()
+                if len(parts) == 2:
+                    try:
+                        label = int(parts[1])
+                        class_labels_set.add(label)
+                    except ValueError:
+                        pass # Ignore lines with non-integer labels
     except FileNotFoundError:
-        print(f"Error: Preprocessed label file not found at {full_label_file_path}")
+        print(f"Error: Original label file not found at {args.label_file}. Cannot determine number of classes.")
         exit(1)
     except Exception as e:
-        print(f"Error reading preprocessed label file {full_label_file_path}: {e}")
+        print(f"Error reading original label file {args.label_file}: {e}")
         exit(1)
 
-    if not all_patch_samples:
-        raise ValueError("No valid patch samples found.")
+    if not class_labels_set:
+        raise ValueError("No valid labels found in the original label file.")
 
-    num_classes = len(class_labels)
-    print(f"Found {len(all_patch_samples)} total patches belonging to {num_classes} classes.")
-    # --- End Load Labels ---
+    num_classes = len(class_labels_set)
+    class_names = [str(i) for i in sorted(list(class_labels_set))] # For reports
+    print(f"Determined {num_classes} classes from label file.")
+    # --- End Load Class Labels ---
 
 
-    # --- Determine Test Split ---
-    patch_paths = [s[0] for s in all_patch_samples]
-    patch_labels = [s[1] for s in all_patch_samples]
+    # --- Determine Test Split by Loading from File ---
+    # Construct path to the test samples file based on the checkpoint file's directory
+    checkpoint_dir = os.path.dirname(args.checkpoint_path)
+    test_set_file_path = os.path.join(checkpoint_dir, 'test_samples.txt')
 
-    if args.train_split_ratio < 1.0:
-         # Use train_test_split to get the *test* portion consistently
-         _, test_paths, _, test_labels = train_test_split(
-             patch_paths, patch_labels,
-             train_size=args.train_split_ratio, # Specify train size
-             random_state=42, # Use same random state as in training script
-             stratify=patch_labels # Stratify based on patch labels
-         )
-         test_samples = list(zip(test_paths, test_labels))
-         print(f"Using Test set with {len(test_samples)} patches")
-    else:
-         # If train ratio was 1.0, there's no separate test set from this split
-         print("Warning: train_split_ratio is 1.0 or greater. No test set generated from this split.")
-         print("Evaluation will run on the full dataset provided.")
-         test_samples = all_patch_samples # Evaluate on all data as 'test'
+    print(f"Loading test set samples from: {test_set_file_path}")
+    test_samples = []
+    try:
+        with open(test_set_file_path, 'r') as f_test:
+            for line in f_test:
+                line = line.strip()
+                if not line: continue
+                parts = line.split()
+                if len(parts) == 2:
+                    rel_path, label_str = parts
+                    try:
+                        label = int(label_str)
+                        test_samples.append((rel_path, label))
+                    except ValueError:
+                        print(f"Warning: Skipping line with non-integer label in test set file: {line}")
+                else:
+                    print(f"Warning: Skipping malformed line in test set file: {line}")
+    except FileNotFoundError:
+        print(f"Error: Test set file '{test_set_file_path}' not found.")
+        print("Make sure the training script saved it in the same directory as the checkpoint.")
+        # --- Fallback (Optional, but less ideal) ---
+        # print("Attempting fallback: Re-calculating split using random_state=42.")
+        # print("WARNING: This might not be the exact test set used during training if data changed.")
+        # try:
+        #     # Reload all samples from the main label file again for fallback split
+        #     all_patch_samples_fallback = []
+        #     with open(args.label_file, 'r') as f_fallback:
+        #         # ... (similar loading logic as in train.py) ...
+        #     patch_paths_fallback = [s[0] for s in all_patch_samples_fallback]
+        #     patch_labels_fallback = [s[1] for s in all_patch_samples_fallback]
+        #     # Use a dummy train_split_ratio if needed, assuming 0.8 was used in training
+        #     train_split_ratio_fallback = 0.8
+        #     _, test_paths, _, test_labels = train_test_split(
+        #         patch_paths_fallback, patch_labels_fallback,
+        #         train_size=train_split_ratio_fallback,
+        #         random_state=42, # MUST match the one used in training
+        #         stratify=patch_labels_fallback
+        #     )
+        #     test_samples = list(zip(test_paths, test_labels))
+        #     print(f"Fallback split generated {len(test_samples)} test samples.")
+        # except Exception as fallback_e:
+        #     print(f"Fallback split failed: {fallback_e}")
+        #     exit(1) # Exit if file not found and fallback fails
+        # --- End Fallback ---
+        exit(1) # Exit if test set file is mandatory
+    except Exception as e:
+        print(f"Error reading test set file {test_set_file_path}: {e}")
+        exit(1)
 
     if not test_samples:
-         print("Error: No samples available for the test set.")
+         print("Error: No samples loaded for the test set.")
          exit(1)
-    # --- End Test Split ---
-
-
+    print(f"Loaded {len(test_samples)} samples for the test set.")
+    # --- End Load Test Split ---
+    
     # --- Create Test Dataset ---
     # Define transform (only normalization needed usually for evaluation)
     transform_mean = [0.5] * args.num_channels if args.num_channels > 0 else None
@@ -235,42 +268,51 @@ if __name__ == '__main__':
 
     # --- Calculate and Print Metrics ---
     if not predictions or not true_labels:
-        print("Error: No predictions or labels were generated during evaluation.")
+        print("Error: Evaluation produced no predictions or labels.")
         exit(1)
 
     accuracy = accuracy_score(true_labels, predictions)
-    conf_matrix = confusion_matrix(true_labels, predictions)
-    class_report = classification_report(true_labels, predictions, target_names=[str(i) for i in sorted(list(class_labels))], zero_division=0)
+    # Ensure labels for confusion matrix and report are within the expected range
+    labels_present = sorted(list(set(true_labels) | set(predictions)))
+    conf_matrix = confusion_matrix(true_labels, predictions, labels=labels_present)
+    class_report = classification_report(true_labels, predictions, labels=labels_present, target_names=[class_names[i] for i in labels_present], zero_division=0)
 
     print("\n--- Evaluation Results ---")
     print(f"Accuracy: {accuracy:.4f}")
     print("\nClassification Report:")
     print(class_report)
     print("\nConfusion Matrix:")
+    # Format confusion matrix for better readability
+    print("Labels:", labels_present)
     print(conf_matrix)
     # --- End Metrics ---
 
 
     # --- Save Confusion Matrix Plot ---
     try:
-        plt.figure(figsize=(10, 8))
-        sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', xticklabels=sorted(list(class_labels)), yticklabels=sorted(list(class_labels)))
-        plt.xlabel('Predicted Label')
-        plt.ylabel('True Label')
-        plt.title('Confusion Matrix')
+        fig, ax = plt.subplots(figsize=(max(6, num_classes // 2), max(5, num_classes // 2)))
+        cax = ax.matshow(conf_matrix, cmap=plt.cm.Blues)
+        fig.colorbar(cax)
+        tick_marks = np.arange(len(labels_present))
+        ax.set_xticks(tick_marks)
+        ax.set_yticks(tick_marks)
+        ax.set_xticklabels([class_names[i] for i in labels_present], rotation=45, ha='left')
+        ax.set_yticklabels([class_names[i] for i in labels_present])
+        ax.set_xlabel('Predicted')
+        ax.set_ylabel('True')
+        ax.set_title(f'Confusion Matrix (Accuracy: {accuracy:.2f})')
 
-        # --- CHANGE HERE ---
-        # Get the directory part of the checkpoint path
-        checkpoint_dir = os.path.dirname(args.checkpoint_path)
-        # Ensure the directory exists (optional but good practice)
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        # Join the directory with the filename
-        plot_path = os.path.join(checkpoint_dir, 'confusion_matrix.png')
-        # --- END CHANGE ---
+        # Add text annotations
+        for i in range(len(labels_present)):
+            for j in range(len(labels_present)):
+                 ax.text(j, i, str(conf_matrix[i, j]), va='center', ha='center', color='white' if conf_matrix[i, j] > conf_matrix.max() / 2 else 'black')
 
-        plt.savefig(plot_path)
-        print(f"Confusion matrix plot saved to {plot_path}")
-        plt.close()
+
+        # Save the plot in the same directory as the checkpoint
+        plot_save_path = os.path.join(checkpoint_dir, 'confusion_matrix.png')
+        plt.savefig(plot_save_path, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Confusion matrix plot saved to: {plot_save_path}")
     except Exception as plot_e:
         print(f"Error saving confusion matrix plot: {plot_e}")
     # --- End Plot ---

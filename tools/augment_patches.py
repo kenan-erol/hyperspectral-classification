@@ -275,7 +275,7 @@ def main(args):
                 patch_np = patch_np.astype(np.float32) # Convert to float32 if needed
 
             # Apply Gaussian noise to the raw HSI data
-            noisy_patch = add_gaussian_noise(patch_np, std_dev=args.noise_std_dev)
+            noisy_patch = add_gaussian_noise(patch_np, std_dev=args.noise_std_dev) # add the other transforms too bruh.
 
             # Define output path for the noisy patch
             # The output structure should mirror the input relative path under output_dir
