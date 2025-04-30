@@ -8,6 +8,7 @@ from tqdm import tqdm
 from collections import defaultdict
 import math
 import matplotlib.pyplot as plt # <-- Add plt import
+from pathlib import Path # <-- Add Path import
 
 # --- Add src directory to sys.path if needed ---
 # (Assuming log_utils is in src relative to project root)
@@ -148,6 +149,59 @@ def add_gaussian_noise(patch, mean=0.0, std_dev=0.1, start_band=None, end_band=N
     return noisy_patch
 # --- End Modified Gaussian Noise Function ---
 
+# --- START: New HSI Augmentation Functions ---
+def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2):
+    """
+    Applies random intensity scaling globally to an HSI patch.
+
+    Args:
+        patch (np.ndarray): The input HSI patch (H, W, C).
+        min_factor (float): Minimum scaling factor.
+        max_factor (float): Maximum scaling factor.
+
+    Returns:
+        np.ndarray: The patch with applied scaling.
+    """
+    if patch is None or patch.size == 0:
+        return patch
+
+    scale_factor = random.uniform(min_factor, max_factor)
+    scaled_patch = patch * scale_factor
+
+    # Clip values if original data was non-negative
+    patch_min_original = np.min(patch) if patch.size > 0 else 0
+    if patch_min_original >= 0:
+        scaled_patch = np.clip(scaled_patch, 0, None)
+
+    return scaled_patch
+
+def apply_random_intensity_offset(patch, min_offset=-0.05, max_offset=0.05):
+    """
+    Applies a random intensity offset globally to an HSI patch.
+
+    Args:
+        patch (np.ndarray): The input HSI patch (H, W, C).
+        min_offset (float): Minimum offset value.
+        max_offset (float): Maximum offset value.
+
+    Returns:
+        np.ndarray: The patch with applied offset.
+    """
+    if patch is None or patch.size == 0:
+        return patch
+
+    offset = random.uniform(min_offset, max_offset)
+    offset_patch = patch + offset
+
+    # Clip values if original data was non-negative
+    patch_min_original = np.min(patch) if patch.size > 0 else 0
+    if patch_min_original >= 0:
+        offset_patch = np.clip(offset_patch, 0, None)
+
+    return offset_patch
+# --- END: New HSI Augmentation Functions ---
+
+
 # --- Augmentation Functions for Visualization (Keep as before) ---
 def apply_random_color_jitter(image_pil, brightness=0.2, contrast=0.2, saturation=0.2):
     """
@@ -201,6 +255,13 @@ def main(args):
     print(f"Output directory: {args.output_dir}")
     print(f"Noise standard deviation: {args.noise_std_dev}")
     print(f"Applying noise to bands: 80 to 130 (inclusive indices)") # Clarify band range
+    # --- Print info about new augmentations ---
+    if args.apply_scaling:
+        print(f"Applying random intensity scaling (Factor: {args.scale_factor_range})")
+    if args.apply_offset:
+        print(f"Applying random intensity offset (Range: {args.offset_range})")
+    # --- End print info ---
+
     # --- Print visualization info ---
     if args.visualize_count > 0:
         print(f"Saving {args.visualize_count} visualization comparisons to: {args.visualize_dir}")
@@ -291,7 +352,8 @@ def main(args):
             # Load original patch
             original_patch_np = np.load(original_patch_full_path)
 
-            # --- Apply Targeted Gaussian Noise ---
+            # --- Apply HSI Augmentations ---
+            # 1. Targeted Gaussian Noise
             augmented_patch_np = add_gaussian_noise(
                 original_patch_np,
                 mean=0.0,
@@ -299,7 +361,23 @@ def main(args):
                 start_band=80, # Python index for 81st band
                 end_band=131  # Python index for 131st band (exclusive)
             )
-            # --- End Noise Application ---
+
+            # 2. Random Intensity Scaling (Optional)
+            if args.apply_scaling:
+                augmented_patch_np = apply_random_intensity_scaling(
+                    augmented_patch_np,
+                    min_factor=args.scale_factor_range[0],
+                    max_factor=args.scale_factor_range[1]
+                )
+
+            # 3. Random Intensity Offset (Optional)
+            if args.apply_offset:
+                augmented_patch_np = apply_random_intensity_offset(
+                    augmented_patch_np,
+                    min_offset=args.offset_range[0],
+                    max_offset=args.offset_range[1]
+                )
+            # --- End HSI Augmentations ---
 
             # Define output path for the augmented .npy file
             # Maintain the same relative structure within the output directory
@@ -321,7 +399,7 @@ def main(args):
                     # Visualize original
                     original_viz_rgb = visualize_hsi_patch(original_patch_np)
 
-                    # Visualize augmented (base)
+                    # Visualize augmented (base) - AFTER HSI augmentations
                     augmented_viz_rgb_base = visualize_hsi_patch(augmented_patch_np)
 
                     if original_viz_rgb is not None and augmented_viz_rgb_base is not None:
@@ -333,14 +411,22 @@ def main(args):
 
                         # Create comparison plot
                         fig, axes = plt.subplots(1, 2, figsize=(8, 4))
+                        # --- Update plot title ---
+                        aug_desc = f"Noise[{81}-{131}]"
+                        if args.apply_scaling: aug_desc += "+Scale"
+                        if args.apply_offset: aug_desc += "+Offset"
+                        aug_desc += " (+Vis Jitter/Hue)"
                         fig.suptitle(f"Augmentation: {os.path.basename(relative_path)} (Label: {label})", fontsize=10)
+                        # --- End update plot title ---
 
                         axes[0].imshow(original_viz_rgb)
                         axes[0].set_title("Original", fontsize=8)
                         axes[0].axis('off')
 
                         axes[1].imshow(augmented_viz_final_rgb)
-                        axes[1].set_title(f"Augmented (Noise[{81}-{131}] + Jitter + Hue)", fontsize=8)
+                        # --- Update subplot title ---
+                        axes[1].set_title(f"Augmented ({aug_desc})", fontsize=8)
+                        # --- End update subplot title ---
                         axes[1].axis('off')
 
                         plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
@@ -398,6 +484,12 @@ if __name__ == "__main__":
     parser.add_argument('--input_label_filename', type=str, required=True, help="Name of the label file corresponding to the input patches (e.g., 'labels_patches.txt', expected inside input_dir or provide full path)")
     parser.add_argument('--output_dir', type=str, required=True, help="Base directory to save the augmented patches and the new label file.")
     parser.add_argument('--noise_std_dev', type=float, default=0.05, help="Standard deviation for the Gaussian noise applied to bands 81-131.")
+    # --- Add arguments for new augmentations ---
+    parser.add_argument('--apply_scaling', action='store_true', help="Apply random intensity scaling to HSI data.")
+    parser.add_argument('--scale_factor_range', type=float, nargs=2, default=[0.8, 1.2], help="Range [min, max] for random intensity scaling factor.")
+    parser.add_argument('--apply_offset', action='store_true', help="Apply random intensity offset to HSI data.")
+    parser.add_argument('--offset_range', type=float, nargs=2, default=[-0.05, 0.05], help="Range [min, max] for random intensity offset.")
+    # --- End add arguments ---
     parser.add_argument('--seed', type=int, default=123, help="Random seed for reproducibility.")
     parser.add_argument('--visualize_count', type=int, default=10, help="Number of original vs. augmented comparison images to save. 0 to disable.")
     parser.add_argument('--visualize_dir', type=str, default=None, help="Directory to save visualization images. Defaults to '[output_dir]/visualizations'.")
@@ -427,8 +519,12 @@ if __name__ == "__main__":
 # python tools/augment_patches.py \
 #   --input_dir ./data_processed_patch/patches \
 #   --input_label_filename ./data_processed_patch/labels_patches.txt \
-#   --output_dir ./data_augmented_50pct_noise_0.05 \
+#   --output_dir ./data_augmented_50pct_noise_scale_offset \
 #   --noise_std_dev 0.05 \
+#   --apply_scaling \
+#   --scale_factor_range 0.9 1.1 \
+#   --apply_offset \
+#   --offset_range -0.02 0.02 \
 #   --seed 123 \
 #   --visualize_count 10
 # --- End Example Command ---
