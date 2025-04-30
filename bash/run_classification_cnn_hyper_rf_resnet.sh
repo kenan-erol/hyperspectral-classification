@@ -10,5 +10,5 @@ python src/run_classification_hyper.py \
   --train_split_ratio 0.8 \
   --encoder_type 'resnet18' \
   --num_channels 256 \
-  --checkpoint_path 'hyper_checkpoints/resnet_rf/model-37.pth' \
+  --checkpoint_path 'hyper_checkpoints/resnet_rf/model-36.pth' \
   --device 'cuda'
