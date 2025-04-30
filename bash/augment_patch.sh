@@ -2,8 +2,4 @@
 
 export CUDA_VISIBLE_DEVICES=0
 
-python tools/augment_patches.py \
-    --input_dir ./data_processed_patch/ \
-    --output_dir ./data_augmented_noise_0.1_subset/ \
-    --noise_std_dev 0.1 \
-    --max_patches 1000
+python tools/augment_patches.py   --input_dir ./data_processed_patch/patches/   --output_dir ./data_augmented_noise_0.005   --noise_std_dev 0.005   --visualize_count 5   --visualize_dir ./data_augmented_noise_0.005/visualizations --input_label_filename './data_processed_patch/labels_patches.txt'
