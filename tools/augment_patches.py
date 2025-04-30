@@ -301,7 +301,10 @@ def main(args):
             for line in f:
                 line = line.strip()
                 if not line: continue
-                parts = line.split()
+                # --- MODIFICATION HERE ---
+                # parts = line.split() # Old way, breaks with spaces in path
+                parts = line.rsplit(maxsplit=1) # New way: split only at the last space
+                # --- END MODIFICATION ---
                 if len(parts) == 2:
                     rel_path, label_str = parts
                     try:
@@ -312,7 +315,8 @@ def main(args):
                     except ValueError:
                         print(f"Warning: Skipping line with non-integer label: {line}")
                 else:
-                    print(f"Warning: Skipping malformed line: {line}")
+                    # This warning will now correctly catch lines that genuinely don't have path + label
+                    print(f"Warning: Skipping malformed line (expected 'path label'): {line}")
     except FileNotFoundError:
         print(f"Error: Input label file not found at {input_label_file}")
         sys.exit(1)
