@@ -10,5 +10,5 @@ python src/run_classification_hyper.py \
   --train_split_ratio 0.8 \
   --encoder_type 'vggnet11' \
   --num_channels 256 \
-  --checkpoint_path 'hyper_checkpoints/vgg_rf/model-36.pth' \
+  --checkpoint_path 'hyper_checkpoints/vgg_rf/model-35.pth' \
   --device 'cuda'
