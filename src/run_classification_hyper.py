@@ -142,7 +142,7 @@ if __name__ == '__main__':
             for line in f_test:
                 line = line.strip()
                 if not line: continue
-                parts = line.split()
+                parts = line.rsplit(maxsplit=1) # Split only on the last space
                 if len(parts) == 2:
                     rel_path, label_str = parts
                     try:
