@@ -8,15 +8,12 @@ from sklearn.metrics import accuracy_score, confusion_matrix, classification_rep
 import matplotlib.pyplot as plt
 import seaborn as sns
 import sys
+from tqdm import tqdm
 
 from classification_model import ClassificationModel
 # --- Import the NEW dataset and collate function ---
 from datasets import PreprocessedPatchDataset, collate_fn_skip_none_preprocessed
 # --- End Import ---
-
-# --- Remove SAM2/Hydra imports if they were present ---
-# ...
-# --- End Remove ---
 
 
 # Define command-line arguments
@@ -90,31 +87,35 @@ if __name__ == '__main__':
     class_labels_set = set()
     try:
         with open(args.label_file, 'r') as f:
-             for line in f:
+             for line_num, line in enumerate(f, 1): # Add line number for better warnings
                 line = line.strip()
                 if not line: continue
-                # --- MODIFICATION HERE ---
-                # parts = line.split() # Original, fails with spaces in path
                 parts = line.rsplit(maxsplit=1) # Correctly splits path from label
-                # --- END MODIFICATION ---
                 if len(parts) == 2:
                     path_part, label_part = parts # Use clearer variable names
                     try:
-                        label = int(label_part)
-                        class_labels_set.add(label)
+                        # --- FIXED: Added conversion and adding to set ---
+                        label_int = int(label_part)
+                        class_labels_set.add(label_int)
+                        # --- END FIXED ---
                     except ValueError:
-                         print(f"Warning: Could not parse label as integer on line: '{line}'", file=sys.stderr) # Added warning print
+                         # --- FIXED: Added specific warning ---
+                         print(f"Warning [Line {line_num}]: Invalid label '{label_part}' in original label file: {line}")
                 else:
-                     print(f"Warning: Skipping malformed line (parts != 2): '{line}'", file=sys.stderr) # Added warning print
+                     # --- FIXED: Added specific warning ---
+                     print(f"Warning [Line {line_num}]: Split error (expected 2 parts, got {len(parts)}) in original label file: {line}")
     except FileNotFoundError:
         print(f"Error: Original label file not found at {args.label_file}. Cannot determine number of classes.")
-        exit(1)
+        sys.exit(1) # Use sys.exit
     except Exception as e:
         print(f"Error reading original label file {args.label_file}: {e}")
-        exit(1)
+        sys.exit(1) # Use sys.exit
 
     if not class_labels_set:
-        raise ValueError("No valid labels found in the original label file.")
+        # --- MODIFIED: Changed to sys.exit ---
+        print("Error: No valid labels found in the original label file.")
+        sys.exit(1)
+        # --- END MODIFIED ---
 
     num_classes = len(class_labels_set)
     class_names = [str(i) for i in sorted(list(class_labels_set))] # For reports
@@ -124,7 +125,14 @@ if __name__ == '__main__':
 
     # --- Determine Test Split by Loading from File ---
     # Construct path to the test samples file based on the checkpoint file's directory
-    checkpoint_dir = os.path.dirname(args.checkpoint_path)
+    # --- MODIFIED: Check if checkpoint_path is a file or dir ---
+    if os.path.isfile(args.checkpoint_path):
+        checkpoint_dir = os.path.dirname(args.checkpoint_path)
+    else:
+        # Assume it's a directory path if it's not a file
+        checkpoint_dir = args.checkpoint_path
+        print(f"Warning: --checkpoint_path '{args.checkpoint_path}' is not a file. Assuming it's the directory containing test_samples.txt.")
+    # --- END MODIFIED ---
     test_set_file_path = os.path.join(checkpoint_dir, 'test_samples.txt')
 
     print(f"Loading test set samples from: {test_set_file_path}")
@@ -267,7 +275,7 @@ if __name__ == '__main__':
 
     # --- Run Evaluation ---
     print("Starting evaluation...")
-    from tqdm import tqdm # Make sure tqdm is imported
+    # from tqdm import tqdm # Make sure tqdm is imported
     predictions, true_labels = run(model, test_dataloader, device)
     print("Evaluation finished.")
     # --- End Evaluation ---
