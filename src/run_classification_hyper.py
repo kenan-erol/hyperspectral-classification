@@ -7,6 +7,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 import seaborn as sns
+import sys
 
 from classification_model import ClassificationModel
 # --- Import the NEW dataset and collate function ---
@@ -92,13 +93,19 @@ if __name__ == '__main__':
              for line in f:
                 line = line.strip()
                 if not line: continue
-                parts = line.split()
+                # --- MODIFICATION HERE ---
+                # parts = line.split() # Original, fails with spaces in path
+                parts = line.rsplit(maxsplit=1) # Correctly splits path from label
+                # --- END MODIFICATION ---
                 if len(parts) == 2:
+                    path_part, label_part = parts # Use clearer variable names
                     try:
-                        label = int(parts[1])
+                        label = int(label_part)
                         class_labels_set.add(label)
                     except ValueError:
-                        pass # Ignore lines with non-integer labels
+                         print(f"Warning: Could not parse label as integer on line: '{line}'", file=sys.stderr) # Added warning print
+                else:
+                     print(f"Warning: Skipping malformed line (parts != 2): '{line}'", file=sys.stderr) # Added warning print
     except FileNotFoundError:
         print(f"Error: Original label file not found at {args.label_file}. Cannot determine number of classes.")
         exit(1)
