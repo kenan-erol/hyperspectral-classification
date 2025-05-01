@@ -236,15 +236,18 @@ if __name__ == '__main__':
     )
 
     # Load checkpoint
-    model_checkpoint_file = os.path.join(args.checkpoint_path) # Or specific checkpoint name
-    if not os.path.exists(model_checkpoint_file):
-        print(f"Error: Model checkpoint not found at {model_checkpoint_file}")
-        exit(1)
+    # --- MODIFIED: Use args.checkpoint_path directly as the file path ---
+    model_checkpoint_file = args.checkpoint_path
+    # --- END MODIFIED ---
+    if not os.path.isfile(model_checkpoint_file): # Check if it's a file
+        print(f"Error: Checkpoint file not found at '{model_checkpoint_file}'")
+        sys.exit(1)
 
     try:
-        print(f"Loading checkpoint dictionary from {model_checkpoint_file}")
-        # Load the entire checkpoint dictionary, mapping tensors to the correct device
+        print(f"Restoring model weights from: {model_checkpoint_file}")
+        # --- MODIFIED: Pass device to torch.load for correct mapping ---
         checkpoint = torch.load(model_checkpoint_file, map_location=device)
+        # --- END MODIFIED ---
 
         # Check if the expected keys exist
         if 'encoder_state_dict' not in checkpoint or 'decoder_state_dict' not in checkpoint:
