@@ -150,14 +150,16 @@ def add_gaussian_noise(patch, mean=0.0, std_dev=0.1, start_band=None, end_band=N
 # --- End Modified Gaussian Noise Function ---
 
 # --- START: New HSI Augmentation Functions ---
-def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2):
+def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2, start_band=None, end_band=None):
     """
-    Applies random intensity scaling globally to an HSI patch.
+    Applies random intensity scaling to an HSI patch, optionally targeting specific bands.
 
     Args:
         patch (np.ndarray): The input HSI patch (H, W, C).
         min_factor (float): Minimum scaling factor.
         max_factor (float): Maximum scaling factor.
+        start_band (int, optional): Start band index (inclusive).
+        end_band (int, optional): End band index (exclusive).
 
     Returns:
         np.ndarray: The patch with applied scaling.
@@ -165,24 +167,37 @@ def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2):
     if patch is None or patch.size == 0:
         return patch
 
+    scaled_patch = patch.copy() # Work on a copy
     scale_factor = random.uniform(min_factor, max_factor)
-    scaled_patch = patch * scale_factor
+    
+    # Determine the slice to apply scaling
+    if start_band is not None and end_band is not None:
+        if 0 <= start_band < end_band <= patch.shape[2]:
+            target_slice = scaled_patch[..., start_band:end_band]
+            target_slice *= scale_factor # Apply scaling only to the slice
+        else:
+            print(f"Warning: Invalid band range [{start_band}:{end_band}] for scaling. Applying globally.")
+            scaled_patch *= scale_factor # Apply globally if range is invalid
+    else:
+        scaled_patch *= scale_factor # Apply globally if range not specified
 
-    # Clip values if original data was non-negative
+    # Clip values if original data was non-negative (apply globally after scaling)
     patch_min_original = np.min(patch) if patch.size > 0 else 0
     if patch_min_original >= 0:
         scaled_patch = np.clip(scaled_patch, 0, None)
 
     return scaled_patch
 
-def apply_random_intensity_offset(patch, min_offset=-0.05, max_offset=0.05):
+def apply_random_intensity_offset(patch, min_offset=-0.05, max_offset=0.05, start_band=None, end_band=None):
     """
-    Applies a random intensity offset globally to an HSI patch.
+    Applies a random intensity offset to an HSI patch, optionally targeting specific bands.
 
     Args:
         patch (np.ndarray): The input HSI patch (H, W, C).
         min_offset (float): Minimum offset value.
         max_offset (float): Maximum offset value.
+        start_band (int, optional): Start band index (inclusive).
+        end_band (int, optional): End band index (exclusive).
 
     Returns:
         np.ndarray: The patch with applied offset.
@@ -190,10 +205,21 @@ def apply_random_intensity_offset(patch, min_offset=-0.05, max_offset=0.05):
     if patch is None or patch.size == 0:
         return patch
 
+    offset_patch = patch.copy() # Work on a copy
     offset = random.uniform(min_offset, max_offset)
-    offset_patch = patch + offset
 
-    # Clip values if original data was non-negative
+    # Determine the slice to apply offset
+    if start_band is not None and end_band is not None:
+        if 0 <= start_band < end_band <= patch.shape[2]:
+            target_slice = offset_patch[..., start_band:end_band]
+            target_slice += offset # Apply offset only to the slice
+        else:
+            print(f"Warning: Invalid band range [{start_band}:{end_band}] for offset. Applying globally.")
+            offset_patch += offset # Apply globally if range is invalid
+    else:
+        offset_patch += offset # Apply globally if range not specified
+
+    # Clip values if original data was non-negative (apply globally after offset)
     patch_min_original = np.min(patch) if patch.size > 0 else 0
     if patch_min_original >= 0:
         offset_patch = np.clip(offset_patch, 0, None)
@@ -349,61 +375,56 @@ def main(args):
     if args.max_patches is not None:
         print(f"Warning: --max_patches argument is ignored. Processing {len(selected_samples_for_processing)} selected samples (~50% stratified).")
 
+    # Define the target band range (Python indices)
+    TARGET_START_BAND = 80  # Corresponds to 81st band
+    TARGET_END_BAND = 131 # Corresponds to 131st band (exclusive)
+
     for relative_path, label in tqdm(selected_samples_for_processing, desc="Augmenting Patches"):
-        original_patch_full_path = os.path.join(args.input_dir, relative_path) # Path relative to input_dir
+        original_patch_full_path = os.path.join(args.input_dir, relative_path)
 
         try:
             # Load original patch
             original_patch_np = np.load(original_patch_full_path)
 
             # --- Apply HSI Augmentations ---
-            # 1. Targeted Gaussian Noise
+            augmented_patch_np = original_patch_np # Start with the original
+
+            # 1. Targeted Gaussian Noise (Always applied based on current script structure)
             augmented_patch_np = add_gaussian_noise(
-                original_patch_np,
+                augmented_patch_np, # Apply to the current state
                 mean=0.0,
                 std_dev=args.noise_std_dev,
-                start_band=80, # Python index for 81st band
-                end_band=131  # Python index for 131st band (exclusive)
+                start_band=TARGET_START_BAND,
+                end_band=TARGET_END_BAND
             )
 
-            # 2. Random Intensity Scaling (Optional)
+            # 2. Random Intensity Scaling (Optional, Targeted)
             if args.apply_scaling:
                 augmented_patch_np = apply_random_intensity_scaling(
-                    augmented_patch_np,
+                    augmented_patch_np, # Apply to the current state
                     min_factor=args.scale_factor_range[0],
-                    max_factor=args.scale_factor_range[1]
-                )
-
-            # 3. Random Intensity Offset (Optional)
-            if args.apply_offset:
-                augmented_patch_np = apply_random_intensity_offset(
-                    augmented_patch_np,
-                    min_offset=args.offset_range[0],
-                    max_offset=args.offset_range[1]
+                    max_factor=args.scale_factor_range[1],
+                    start_band=TARGET_START_BAND, # <-- Add band targeting
+                    end_band=TARGET_END_BAND    # <-- Add band targeting
                 )
             # --- End HSI Augmentations ---
 
             # Define output path for the augmented .npy file
             # Maintain the same relative structure within the output directory
-            output_relative_path = relative_path # Use the same relative path
+            output_relative_path = relative_path
             output_patch_full_path = os.path.join(output_patches_base_dir, output_relative_path)
-
-            # Ensure the subdirectory structure exists in the output
             os.makedirs(os.path.dirname(output_patch_full_path), exist_ok=True)
 
             # Save the augmented patch
             np.save(output_patch_full_path, augmented_patch_np)
 
-            # Add entry for the new label file (path relative to output_dir/patches_augmented)
-            augmented_samples.append((output_relative_path, label)) # Store relative path and label
+            # Add entry for the new label file
+            augmented_samples.append((output_relative_path, label))
 
             # --- Generate and Save Visualization (if enabled and count not reached) ---
             if args.visualize_count > 0 and viz_saved_count < args.visualize_count:
                 try:
-                    # Visualize original
                     original_viz_rgb = visualize_hsi_patch(original_patch_np)
-
-                    # Visualize augmented (base) - AFTER HSI augmentations
                     augmented_viz_rgb_base = visualize_hsi_patch(augmented_patch_np)
 
                     if original_viz_rgb is not None and augmented_viz_rgb_base is not None:
@@ -416,29 +437,24 @@ def main(args):
                         # Create comparison plot
                         fig, axes = plt.subplots(1, 2, figsize=(8, 4))
                         # --- Update plot title ---
-                        aug_desc = f"Noise[{81}-{131}]"
-                        if args.apply_scaling: aug_desc += "+Scale"
-                        if args.apply_offset: aug_desc += "+Offset"
+                        aug_desc = f"Noise[{TARGET_START_BAND+1}-{TARGET_END_BAND}]" # Show 1-based indices
+                        if args.apply_scaling: aug_desc += f"+Scale[{TARGET_START_BAND+1}-{TARGET_END_BAND}]"
+                        if args.apply_offset: aug_desc += f"+Offset[{TARGET_START_BAND+1}-{TARGET_END_BAND}]"
                         aug_desc += " (+Vis Jitter/Hue)"
                         fig.suptitle(f"Augmentation: {os.path.basename(relative_path)} (Label: {label})", fontsize=10)
-                        # --- End update plot title ---
+                         # --- End update plot title ---
 
                         axes[0].imshow(original_viz_rgb)
-                        axes[0].set_title("Original", fontsize=8)
+                        axes[0].set_title("Original Patch (Mean)", fontsize=8)
                         axes[0].axis('off')
 
                         axes[1].imshow(augmented_viz_final_rgb)
-                        # --- Update subplot title ---
                         axes[1].set_title(f"Augmented ({aug_desc})", fontsize=8)
-                        # --- End update subplot title ---
                         axes[1].axis('off')
 
                         plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
-
-                        # Sanitize filename for saving
-                        safe_filename_base = os.path.splitext(relative_path.replace(os.sep, '_'))[0]
-                        viz_save_path = os.path.join(args.visualize_dir, f"viz_{viz_saved_count}_{safe_filename_base}.png")
-                        plt.savefig(viz_save_path)
+                        viz_filename = os.path.join(args.visualize_dir, f"viz_{viz_saved_count:03d}_{os.path.basename(relative_path).replace('.npy', '.png')}")
+                        plt.savefig(viz_filename, dpi=150)
                         plt.close(fig)
                         viz_saved_count += 1
                     else:
