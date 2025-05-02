@@ -20,21 +20,24 @@ if src_path not in sys.path:
 # --- End Path Setup ---
 
 # --- HSI to RGB Visualization Function ---
-def visualize_hsi_patch(hsi_patch_np):
+def visualize_hsi_patch(hsi_patch_np, start_band=None, end_band=None):
     """
     Creates a displayable RGB image (uint8) from an HSI patch (float32/64)
-    using the mean across spectral channels and robust normalization.
+    using the mean across a specified range of spectral channels and robust normalization.
     Handles potential edge cases like zero channels or constant values.
 
     Args:
         hsi_patch_np (np.ndarray): The hyperspectral patch (H, W, C).
+        start_band (int, optional): The starting band index (inclusive). Defaults to 0.
+        end_band (int, optional): The ending band index (exclusive). Defaults to include all bands.
 
     Returns:
-        np.ndarray: An RGB image (H, W, 3) of type uint8, or None if input is invalid.
+        Tuple[np.ndarray, str]: An RGB image (H, W, 3) of type uint8, and the band range string used.
+                                Returns (zeros, "Invalid") if input is invalid.
     """
     if hsi_patch_np is None or hsi_patch_np.ndim < 2:
-        print("Warning: Invalid input to visualize_hsi_patch.")
-        return None
+        print("Warning: Invalid input patch for visualization.")
+        return np.zeros((50, 50, 3), dtype=np.uint8), "Invalid" # Return a small black square
 
     # Ensure 3 dimensions (H, W, C) even if C=1
     if hsi_patch_np.ndim == 2:
@@ -44,49 +47,66 @@ def visualize_hsi_patch(hsi_patch_np):
 
     # Handle case with zero channels
     if img_c == 0:
-        print("Warning: Input patch has zero channels.")
-        return np.zeros((img_h, img_w, 3), dtype=np.uint8)
+        print("Warning: Patch has zero channels.")
+        return np.zeros((img_h, img_w, 3), dtype=np.uint8), "0 Channels"
 
-    # Calculate the mean across the spectral dimension
+    # --- START: Band Slicing ---
+    actual_start_band = start_band if start_band is not None else 0
+    actual_end_band = end_band if end_band is not None else img_c
+
+    # Validate band range
+    if actual_start_band < 0 or actual_end_band > img_c or actual_start_band >= actual_end_band:
+        print(f"Warning: Invalid band range [{actual_start_band}:{actual_end_band}] for patch with {img_c} channels. Using full range.")
+        patch_to_process = hsi_patch_np
+        band_range_str = f"All ({img_c})"
+    else:
+        patch_to_process = hsi_patch_np[:, :, actual_start_band:actual_end_band]
+        # Use 1-based indexing for display string if desired, or keep 0-based
+        band_range_str = f"{actual_start_band+1}-{actual_end_band}" # e.g., 81-131
+        # Or use 0-based: band_range_str = f"{actual_start_band}-{actual_end_band-1}" # e.g., 80-130
+    # --- END: Band Slicing ---
+
+    # Check if the slice is empty
+    if patch_to_process.shape[2] == 0:
+        print(f"Warning: Selected band range [{actual_start_band}:{actual_end_band}] resulted in zero channels.")
+        return np.zeros((img_h, img_w, 3), dtype=np.uint8), "Empty Range"
+
+
+    # Calculate the mean across the spectral dimension of the processed patch
     try:
-        # Use nanmean to handle potential NaNs if they exist in data
-        display_img = np.nanmean(hsi_patch_np, axis=2)
+        # Use nanmean to handle potential NaNs if necessary
+        display_img = np.nanmean(patch_to_process, axis=2)
     except Exception as e:
-        print(f"Warning: Error calculating mean across channels: {e}")
-        return np.zeros((img_h, img_w, 3), dtype=np.uint8)
+        print(f"Error calculating mean for visualization: {e}")
+        return np.zeros((img_h, img_w, 3), dtype=np.uint8), "Mean Error"
 
     # Check if result is all NaN (can happen if input was all NaN)
     if np.all(np.isnan(display_img)):
-        print("Warning: Mean across channels resulted in all NaNs.")
-        return np.zeros((img_h, img_w, 3), dtype=np.uint8)
+        print("Warning: Mean image is all NaN.")
+        return np.zeros((img_h, img_w, 3), dtype=np.uint8), "All NaN"
 
     # Normalize the mean image to 0-255 range
-    # Use nanmin/nanmax to ignore NaNs during normalization
     min_val = np.nanmin(display_img)
     max_val = np.nanmax(display_img)
 
-    # Check if min/max are valid numbers
     if np.isnan(min_val) or np.isnan(max_val):
-         print("Warning: Could not determine valid min/max for normalization (NaNs present).")
-         display_img = np.zeros((img_h, img_w), dtype=np.uint8) # Return black image
+         print("Warning: NaN found during normalization min/max calculation.")
+         display_img = np.zeros((img_h, img_w), dtype=np.float32)
     elif max_val > min_val:
-        # Normalize, ensuring we handle potential NaNs from input
-        display_img = np.nan_to_num(display_img, nan=min_val) # Replace NaNs with min_val before scaling
-        display_img = ((display_img - min_val) / (max_val - min_val) * 255.0)
+        display_img = (display_img - min_val) / (max_val - min_val) * 255.0
     elif max_val == min_val:
-        # Handle constant value image - map to mid-gray or black
-        # print("Warning: Patch has constant value across spatial and spectral dimensions.")
-        display_img = np.full((img_h, img_w), 128 if min_val != 0 else 0, dtype=float) # Mid-gray or black
-    else: # max_val < min_val (should not happen with nanmin/max) or other issues
-        print("Warning: Unexpected min/max values during normalization.")
-        display_img = np.zeros((img_h, img_w), dtype=np.uint8) # Return black image
+        display_img = np.zeros((img_h, img_w), dtype=np.float32)
+    else:
+         print("Warning: max_val <= min_val during normalization. Setting to 0.")
+         display_img = np.zeros((img_h, img_w), dtype=np.float32)
 
-    # Convert to uint8 and stack to create 3-channel RGB
+    display_img = np.nan_to_num(display_img, nan=0.0)
+    display_img = np.clip(display_img, 0, 255)
+
     display_img_uint8 = display_img.astype(np.uint8)
     rgb_display = np.stack([display_img_uint8] * 3, axis=-1)
 
-    return rgb_display
-# --- End HSI to RGB Visualization Function ---
+    return rgb_display, band_range_str
 
 
 # --- Modified Gaussian Noise Function ---
@@ -275,35 +295,45 @@ def apply_random_hue_shift(image_pil, max_hue_delta=0.1):
 
 
 def main(args):
-    print(f"Starting augmentation process...")
-    print(f"Input directory: {args.input_dir}")
-    print(f"Input label file: {args.input_label_filename}")
-    print(f"Output directory: {args.output_dir}")
-    print(f"Noise standard deviation: {args.noise_std_dev}")
-    print(f"Applying noise to bands: 80 to 130 (inclusive indices)") # Clarify band range
-    # --- Print info about new augmentations ---
-    if args.apply_scaling:
-        print(f"Applying random intensity scaling (Factor: {args.scale_factor_range})")
-    if args.apply_offset:
-        print(f"Applying random intensity offset (Range: {args.offset_range})")
-    # --- End print info ---
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
+    visualize_dir = Path(args.visualize_dir) if args.visualize_dir else None
+    input_label_file = Path(args.input_label_filename)
 
-    # --- Print visualization info ---
-    if args.visualize_count > 0:
-        print(f"Saving {args.visualize_count} visualization comparisons to: {args.visualize_dir}")
-        os.makedirs(args.visualize_dir, exist_ok=True)
-        # Clear existing visualization files
-        print(f"Clearing existing files in {args.visualize_dir}...")
-        for filename in os.listdir(args.visualize_dir):
-             file_path = os.path.join(args.visualize_dir, filename)
+    # --- Directory and File Checks ---
+    if not input_dir.is_dir():
+        print(f"Error: Input directory '{input_dir}' not found.")
+        sys.exit(1)
+    if not input_label_file.is_file():
+        # Try resolving relative to input_dir parent if it's just a filename
+        if not input_label_file.is_absolute() and not input_label_file.parent.name:
+             potential_path = input_dir.parent / input_label_file.name
+             if potential_path.is_file():
+                  input_label_file = potential_path
+                  print(f"Interpreted input label file as: {input_label_file}")
+             else:
+                  print(f"Error: Input label file '{args.input_label_filename}' not found.")
+                  sys.exit(1)
+        else:
+             print(f"Error: Input label file '{input_label_file}' not found.")
+             sys.exit(1)
+
+    output_patches_dir = output_dir / 'patches_augmented' # Consistent subdir name
+    output_label_file = output_dir / 'labels_augmented.txt' # Consistent label file name
+
+    output_patches_dir.mkdir(parents=True, exist_ok=True)
+    
+    if visualize_dir:
+        visualize_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Clearing existing files in {visualize_dir}...")
+        for filename in os.listdir(visualize_dir):
+             file_path = os.path.join(visualize_dir, filename)
              try:
                  if os.path.isfile(file_path) or os.path.islink(file_path):
                      os.unlink(file_path)
              except Exception as e:
                  print(f'Failed to delete {file_path}. Reason: {e}')
-    else:
-        print("Visualization disabled.")
-    # --- End visualization info ---
+    # --- End Directory and File Checks ---
 
     # Set random seed for reproducibility
     random.seed(args.seed)
@@ -327,21 +357,16 @@ def main(args):
             for line in f:
                 line = line.strip()
                 if not line: continue
-                # --- MODIFICATION HERE ---
-                # parts = line.split() # Old way, breaks with spaces in path
-                parts = line.rsplit(maxsplit=1) # New way: split only at the last space
-                # --- END MODIFICATION ---
+                parts = line.rsplit(maxsplit=1) # Split only at the last space
                 if len(parts) == 2:
                     rel_path, label_str = parts
                     try:
                         label = int(label_str)
-                        # Store the relative path and label
                         all_samples_by_label[label].append(rel_path)
                         total_samples_read += 1
                     except ValueError:
                         print(f"Warning: Skipping line with non-integer label: {line}")
                 else:
-                    # This warning will now correctly catch lines that genuinely don't have path + label
                     print(f"Warning: Skipping malformed line (expected 'path label'): {line}")
     except FileNotFoundError:
         print(f"Error: Input label file not found at {input_label_file}")
@@ -366,94 +391,125 @@ def main(args):
             selected_samples_for_processing.append((path, label)) # Keep label info
 
     print(f"Total samples selected for processing: {len(selected_samples_for_processing)}")
-
-    # Shuffle the selected list to ensure random order during processing/visualization
     random.shuffle(selected_samples_for_processing)
     # --- End Stratified Sampling ---
 
     # --- Process Only Selected Samples ---
-    if args.max_patches is not None:
-        print(f"Warning: --max_patches argument is ignored. Processing {len(selected_samples_for_processing)} selected samples (~50% stratified).")
+    # if args.max_patches is not None:
+    #     print(f"Warning: --max_patches argument is ignored. Processing {len(selected_samples_for_processing)} selected samples (~50% stratified).")
 
     # Define the target band range (Python indices)
     TARGET_START_BAND = 80  # Corresponds to 81st band
     TARGET_END_BAND = 131 # Corresponds to 131st band (exclusive)
 
+    augmented_samples_list = [] # Store (rel_path, label) for the new label file
+    processed_count = 0
+    viz_saved_count = 0
+
+    # --- Process Only Selected Samples ---
     for relative_path, label in tqdm(selected_samples_for_processing, desc="Augmenting Patches"):
-        original_patch_full_path = os.path.join(args.input_dir, relative_path)
+        original_patch_full_path = input_dir / relative_path # Use Path object
 
         try:
             # Load original patch
             original_patch_np = np.load(original_patch_full_path)
+            if original_patch_np.dtype == np.float64:
+                 original_patch_np = original_patch_np.astype(np.float32)
 
             # --- Apply HSI Augmentations ---
-            augmented_patch_np = original_patch_np # Start with the original
+            augmented_patch_np = original_patch_np.copy() # Start with a copy
+            aug_desc_parts = []
+            scale_factor = 1.0
+            offset_value = 0.0
 
-            # 1. Targeted Gaussian Noise (Always applied based on current script structure)
-            augmented_patch_np = add_gaussian_noise(
-                augmented_patch_np, # Apply to the current state
-                mean=0.0,
-                std_dev=args.noise_std_dev,
-                start_band=TARGET_START_BAND,
-                end_band=TARGET_END_BAND
-            )
+            # 1. Noise
+            if args.noise_std_dev > 0:
+                augmented_patch_np = add_gaussian_noise(
+                    augmented_patch_np,
+                    std_dev=args.noise_std_dev,
+                    start_band=TARGET_START_BAND,
+                    end_band=TARGET_END_BAND
+                )
+                noise_range = f"[{TARGET_START_BAND+1}:{TARGET_END_BAND}]" if TARGET_START_BAND is not None else "All"
+                aug_desc_parts.append(f"N(σ={args.noise_std_dev}, bands={noise_range})")
 
-            # 2. Random Intensity Scaling (Optional, Targeted)
+            # 2. Scaling
             if args.apply_scaling:
-                augmented_patch_np = apply_random_intensity_scaling(
-                    augmented_patch_np, # Apply to the current state
+                augmented_patch_np, scale_factor = apply_random_intensity_scaling(
+                    augmented_patch_np,
                     min_factor=args.scale_factor_range[0],
                     max_factor=args.scale_factor_range[1],
-                    start_band=TARGET_START_BAND, # <-- Add band targeting
-                    end_band=TARGET_END_BAND    # <-- Add band targeting
+                    start_band=args.scale_offset_start_band, # Use specific scale/offset range
+                    end_band=args.scale_offset_end_band
                 )
+                if abs(scale_factor - 1.0) > 1e-6:
+                    scale_range = f"[{args.scale_offset_start_band+1}:{args.scale_offset_end_band}]" if args.scale_offset_start_band is not None else "All"
+                    aug_desc_parts.append(f"S(x{scale_factor:.2f}, bands={scale_range})")
+
+            # 3. Offset
+            if args.apply_offset:
+                augmented_patch_np, offset_value = apply_random_intensity_offset(
+                    augmented_patch_np,
+                    min_offset=args.offset_range[0],
+                    max_offset=args.offset_range[1],
+                    start_band=args.scale_offset_start_band, # Use specific scale/offset range
+                    end_band=args.scale_offset_end_band
+                )
+                if abs(offset_value) > 1e-6:
+                     offset_range = f"[{args.scale_offset_start_band+1}:{args.scale_offset_end_band}]" if args.scale_offset_start_band is not None else "All"
+                     aug_desc_parts.append(f"O({offset_value:+.3f}, bands={offset_range})")
+
+            aug_desc = " + ".join(aug_desc_parts) if aug_desc_parts else "None"
             # --- End HSI Augmentations ---
 
             # Define output path for the augmented .npy file
-            # Maintain the same relative structure within the output directory
-            output_relative_path = relative_path
-            output_patch_full_path = os.path.join(output_patches_base_dir, output_relative_path)
-            os.makedirs(os.path.dirname(output_patch_full_path), exist_ok=True)
+            output_patch_full_path = output_patches_dir / relative_path # Use Path object
+            output_patch_full_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Save the augmented patch
             np.save(output_patch_full_path, augmented_patch_np)
 
-            # Add entry for the new label file
-            augmented_samples.append((output_relative_path, label))
+            # Add entry for the new label file (use relative path from output_dir)
+            output_relative_path = output_patch_full_path.relative_to(output_dir)
+            augmented_samples_list.append((output_relative_path.as_posix(), label))
 
             # --- Generate and Save Visualization (if enabled and count not reached) ---
-            if args.visualize_count > 0 and viz_saved_count < args.visualize_count:
+            if visualize_dir and viz_saved_count < args.visualize_count:
                 try:
-                    original_viz_rgb = visualize_hsi_patch(original_patch_np)
-                    augmented_viz_rgb_base = visualize_hsi_patch(augmented_patch_np)
+                    # --- Generate RGB for specific band range ---
+                    original_viz_rgb, orig_band_str = visualize_hsi_patch(original_patch_np, start_band=TARGET_START_BAND, end_band=TARGET_END_BAND)
+                    augmented_viz_rgb, aug_band_str = visualize_hsi_patch(augmented_patch_np, start_band=TARGET_START_BAND, end_band=TARGET_END_BAND)
+                    # ---
 
-                    if original_viz_rgb is not None and augmented_viz_rgb_base is not None:
-                        # Apply visual jitter/hue only to the augmented visualization
-                        aug_viz_pil = Image.fromarray(augmented_viz_rgb_base)
-                        aug_viz_pil = apply_random_color_jitter(aug_viz_pil)
-                        aug_viz_pil = apply_random_hue_shift(aug_viz_pil)
-                        augmented_viz_final_rgb = np.array(aug_viz_pil)
+                    # --- REMOVE visual jitter/hue application ---
+                    # aug_viz_pil = Image.fromarray(augmented_viz_rgb_base)
+                    # aug_viz_pil = apply_random_color_jitter(aug_viz_pil)
+                    # aug_viz_pil = apply_random_hue_shift(aug_viz_pil)
+                    # augmented_viz_final_rgb = np.array(aug_viz_pil)
+                    # --- Use the direct RGB conversion ---
+                    augmented_viz_final_rgb = augmented_viz_rgb
+                    # ---
 
+                    if original_viz_rgb is not None and augmented_viz_final_rgb is not None:
                         # Create comparison plot
-                        fig, axes = plt.subplots(1, 2, figsize=(8, 4))
-                        # --- Update plot title ---
-                        aug_desc = f"Noise[{TARGET_START_BAND+1}-{TARGET_END_BAND}]" # Show 1-based indices
-                        if args.apply_scaling: aug_desc += f"+Scale[{TARGET_START_BAND+1}-{TARGET_END_BAND}]"
-                        if args.apply_offset: aug_desc += f"+Offset[{TARGET_START_BAND+1}-{TARGET_END_BAND}]"
-                        aug_desc += " (+Vis Jitter/Hue)"
-                        fig.suptitle(f"Augmentation: {os.path.basename(relative_path)} (Label: {label})", fontsize=10)
-                         # --- End update plot title ---
+                        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+                        fig.suptitle(f"Patch: {relative_path} (Label: {label})", fontsize=10)
 
+                        # --- Update plot titles ---
                         axes[0].imshow(original_viz_rgb)
-                        axes[0].set_title("Original Patch (Mean)", fontsize=8)
+                        axes[0].set_title(f"Original (Mean Bands {orig_band_str})", fontsize=8)
                         axes[0].axis('off')
 
                         axes[1].imshow(augmented_viz_final_rgb)
-                        axes[1].set_title(f"Augmented ({aug_desc})", fontsize=8)
+                        # Combine band info and augmentation description
+                        axes[1].set_title(f"Augmented (Mean Bands {aug_band_str})\n{aug_desc}", fontsize=8)
                         axes[1].axis('off')
+                        # --- End update plot titles ---
 
-                        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout to prevent title overlap
-                        viz_filename = os.path.join(args.visualize_dir, f"viz_{viz_saved_count:03d}_{os.path.basename(relative_path).replace('.npy', '.png')}")
+                        plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Adjust layout
+                        # Create a more descriptive filename
+                        viz_filename_base = Path(relative_path).name.replace('.npy', '.png')
+                        viz_filename = visualize_dir / f"viz_{viz_saved_count:03d}_{viz_filename_base}"
                         plt.savefig(viz_filename, dpi=150)
                         plt.close(fig)
                         viz_saved_count += 1
@@ -462,6 +518,7 @@ def main(args):
 
                 except Exception as viz_e:
                     print(f"Warning: Failed to create/save visualization for {relative_path}: {viz_e}")
+                    if 'fig' in locals() and plt.fignum_exists(fig.number): plt.close(fig) # Close figure on error
             # --- End Visualization ---
 
             processed_count += 1
@@ -470,27 +527,27 @@ def main(args):
             print(f"Warning: Original patch file not found: {original_patch_full_path}. Skipping.")
         except Exception as e:
             print(f"Error processing patch {relative_path}: {e}")
+            import traceback
+            traceback.print_exc() # Print full traceback for debugging
             # Decide whether to continue or stop on error
             # continue
     # --- End Processing Loop ---
 
     print(f"\nFinished augmenting {processed_count} patches.")
-    if args.visualize_count > 0:
-        print(f"Saved {viz_saved_count} visualization comparisons.")
+    if visualize_dir:
+        print(f"Saved {viz_saved_count} visualization comparisons to {visualize_dir}")
 
-    if not augmented_samples:
+    if not augmented_samples_list:
         print("Error: No patches were successfully augmented.")
         sys.exit(1)
 
     # Save the new label file
     print(f"Saving new label file to {output_label_file}")
     try:
-        # Sort for consistency
-        augmented_samples.sort()
+        augmented_samples_list.sort() # Sort for consistency
         with open(output_label_file, 'w') as f:
-            for rel_path, label in augmented_samples:
-                # Ensure forward slashes for consistency in the label file
-                f.write(f"{Path(rel_path).as_posix()} {label}\n")
+            for rel_path, label in augmented_samples_list:
+                f.write(f"{rel_path} {label}\n")
     except Exception as e:
         print(f"Error writing augmented label file: {e}")
         sys.exit(1)
@@ -499,52 +556,68 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Augment preprocessed hyperspectral patches with noise, processing ~50% stratified by class, and visualize.")
-    parser.add_argument('--input_dir', type=str, required=True, help="Base directory containing the original preprocessed patches (e.g., './data_processed_patch/patches')")
-    parser.add_argument('--input_label_filename', type=str, required=True, help="Name of the label file corresponding to the input patches (e.g., 'labels_patches.txt', expected inside input_dir or provide full path)")
-    parser.add_argument('--output_dir', type=str, required=True, help="Base directory to save the augmented patches and the new label file.")
-    parser.add_argument('--noise_std_dev', type=float, default=0.05, help="Standard deviation for the Gaussian noise applied to bands 81-131.")
-    # --- Add arguments for new augmentations ---
-    parser.add_argument('--apply_scaling', action='store_true', help="Apply random intensity scaling to HSI data.")
-    parser.add_argument('--scale_factor_range', type=float, nargs=2, default=[0.8, 1.2], help="Range [min, max] for random intensity scaling factor.")
-    parser.add_argument('--apply_offset', action='store_true', help="Apply random intensity offset to HSI data.")
-    parser.add_argument('--offset_range', type=float, nargs=2, default=[-0.05, 0.05], help="Range [min, max] for random intensity offset.")
-    # --- End add arguments ---
-    parser.add_argument('--seed', type=int, default=123, help="Random seed for reproducibility.")
-    parser.add_argument('--visualize_count', type=int, default=10, help="Number of original vs. augmented comparison images to save. 0 to disable.")
+    parser = argparse.ArgumentParser(description="Augment hyperspectral patches with noise, scaling, offset, processing ~50% stratified by class, and visualize.")
+    # Input/Output
+    parser.add_argument('--input_dir', type=str, required=True, help="Directory containing the original .npy patches (e.g., './data_processed_patch/patches').")
+    parser.add_argument('--input_label_filename', type=str, required=True, help="Path to the label file containing relative paths of original patches (e.g., './data_processed_patch/labels_patches.txt').")
+    parser.add_argument('--output_dir', type=str, required=True, help="Base directory to save the augmented patches ('patches_augmented/' subdir) and the new label file ('labels_augmented.txt').")
+
+    # Noise Augmentation
+    parser.add_argument('--noise_std_dev', type=float, default=0.0, help="Standard deviation for Gaussian noise. Set to 0 to disable.")
+    # parser.add_argument('--noise_start_band', type=int, default=None, help="Start band index (inclusive, 0-based) for noise application (optional).")
+    # parser.add_argument('--noise_end_band', type=int, default=None, help="End band index (exclusive, 0-based) for noise application (optional).")
+
+    # Scaling Augmentation
+    parser.add_argument('--apply_scaling', action='store_true', help="Apply random intensity scaling.")
+    parser.add_argument('--scale_factor_range', type=float, nargs=2, default=[0.8, 1.2], help="Range [min, max] for random scaling factor.")
+
+    # Offset Augmentation
+    parser.add_argument('--apply_offset', action='store_true', help="Apply random intensity offset.")
+    parser.add_argument('--offset_range', type=float, nargs=2, default=[-0.05, 0.05], help="Range [min, max] for random offset value.")
+
+    # # Shared Band Range for Scaling/Offset (Optional)
+    # parser.add_argument('--scale_offset_start_band', type=int, default=None, help="Start band index (inclusive, 0-based) for scaling/offset (optional).")
+    # parser.add_argument('--scale_offset_end_band', type=int, default=None, help="End band index (exclusive, 0-based) for scaling/offset (optional).")
+
+    # General Settings
+    parser.add_argument('--seed', type=int, default=42, help="Random seed for reproducibility.")
+
+    # Visualization Settings
+    parser.add_argument('--visualize_count', type=int, default=10, help="Number of random patches to visualize (0 for none).")
     parser.add_argument('--visualize_dir', type=str, default=None, help="Directory to save visualization images. Defaults to '[output_dir]/visualizations'.")
-    parser.add_argument('--max_patches', type=int, default=None, help="(IGNORED) Maximum number of patches to process. Script now processes ~50% stratified.")
+
+    # Ignored Argument (Kept for compatibility if scripts call it)
+    parser.add_argument('--max_patches', type=int, default=None, help="(IGNORED) Script processes ~50% stratified.")
 
     args = parser.parse_args()
 
     # Default visualization dir if not provided
-    if args.visualize_dir is None:
+    if args.visualize_dir is None and args.visualize_count > 0:
         args.visualize_dir = os.path.join(args.output_dir, 'visualizations')
 
-    # Adjust input label file path if it's just a name
-    if not os.path.isabs(args.input_label_filename) and not os.path.dirname(args.input_label_filename):
-         # If it's just a filename, assume it's relative to the input_dir's parent
-         # Or adjust logic if it's expected *inside* input_dir
-         input_dir_parent = os.path.dirname(args.input_dir) if args.input_dir != '.' else '.'
-         potential_path = os.path.join(input_dir_parent, args.input_label_filename)
-         if os.path.exists(potential_path):
-              args.input_label_filename = potential_path
-              print(f"Interpreted input label file path as: {args.input_label_filename}")
-         # Add more robust path checking if needed
+    # Validate ranges
+    if args.apply_scaling and args.scale_factor_range[0] >= args.scale_factor_range[1]:
+        raise ValueError("scale_factor_range min must be less than max.")
+    if args.apply_offset and args.offset_range[0] >= args.offset_range[1]:
+        raise ValueError("offset_range min must be less than max.")
 
     main(args)
-
 
 # --- Example Command ---
 # python tools/augment_patches.py \
 #   --input_dir ./data_processed_patch/patches \
 #   --input_label_filename ./data_processed_patch/labels_patches.txt \
-#   --output_dir ./data_augmented_50pct_noise_scale_offset \
+#   --output_dir ./data_augmented_noise0.05_scale0.9-1.1_offset-0.02-0.02_bands81-131 \
 #   --noise_std_dev 0.05 \
+#   --noise_start_band 80 \
+#   --noise_end_band 131 \
 #   --apply_scaling \
 #   --scale_factor_range 0.9 1.1 \
 #   --apply_offset \
 #   --offset_range -0.02 0.02 \
+#   --scale_offset_start_band 80 \
+#   --scale_offset_end_band 131 \
 #   --seed 123 \
-#   --visualize_count 10
+#   --visualize_count 20 \
+#   --visualize_dir ./visualizations_bands81-131
 # --- End Example Command ---
