@@ -463,13 +463,16 @@ class PreprocessedPatchDataset(Dataset):
             return transformed_tensor, label
 
         except FileNotFoundError:
-            print(f"Error: Patch file not found: {full_patch_path} for index {idx}")
-            return None, None # Return None if file not found
+            # More specific error for file not found
+            print(f"Error: Patch file not found at {full_patch_path}. Index: {idx}")
+            return None, None # Return None for both tensor and label
         except Exception as e:
-            print(f"Error loading or processing patch {full_patch_path} for index {idx}: {e}")
-            # import traceback # Uncomment for debugging
-            # traceback.print_exc() # Uncomment for debugging
-            return None, None # Return None on other errors
+            # General error during loading or processing
+            print(f"Error loading or processing patch {full_patch_path} at index {idx}: {e}")
+            # Optionally print traceback for more detail:
+            import traceback
+            traceback.print_exc()
+            return None, None # Return None for both tensor and label
 
 def collate_fn_skip_none_preprocessed(batch):
     """Collate function that filters out items where the patch tensor is None."""
