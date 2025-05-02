@@ -1,0 +1,100 @@
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0006/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0003/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0010/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0001/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0007/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0004/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0005/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0002/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0008/measurement.npy 4
+Tramadol 2025-01-21/Tramadol 2025-01-21/Group/M0009/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0006/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0003/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0010/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0001/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0007/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0004/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0005/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0002/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0008/measurement.npy 4
+Tramadol 2025-01-14/Tramadol 2025-01-14/Group/M0009/measurement.npy 4
+Tradolan 2024-12-09/Group/M0006/measurement.npy 4
+Tradolan 2024-12-09/Group/M0003/measurement.npy 4
+Tradolan 2024-12-09/Group/M0010/measurement.npy 4
+Tradolan 2024-12-09/Group/M0001/measurement.npy 4
+Tradolan 2024-12-09/Group/M0007/measurement.npy 4
+Tradolan 2024-12-09/Group/M0004/measurement.npy 4
+Tradolan 2024-12-09/Group/M0005/measurement.npy 4
+Tradolan 2024-12-09/Group/M0002/measurement.npy 4
+Tradolan 2024-12-09/Group/M0008/measurement.npy 4
+Tradolan 2024-12-09/Group/M0009/measurement.npy 4
+Klonazepam 2024-12-09/Group/M0006/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0003/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0010/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0001/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0007/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0004/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0005/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0002/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0008/measurement.npy 1
+Klonazepam 2024-12-09/Group/M0009/measurement.npy 1
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0006/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0003/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0010/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0001/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0007/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0004/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0005/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0002/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0008/measurement.npy 3
+oxykodon 2025-01-20/oxykodon 2025-01-20/Group/M0009/measurement.npy 3
+Ecstasy 2025-01-14/Group/M0006/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0003/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0010/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0001/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0007/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0004/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0005/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0002/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0008/measurement.npy 2
+Ecstasy 2025-01-14/Group/M0009/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0006/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0003/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0010/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0001/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0007/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0004/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0005/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0002/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0008/measurement.npy 2
+ecstasy 2025-01-20/ecstasy 2025-01-20/Group/M0009/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0006/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0003/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0010/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0001/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0007/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0004/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0005/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0002/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0008/measurement.npy 2
+Ecstasy 2025-01-21/Ecstasy 2025-01-21/Group/M0009/measurement.npy 2
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0006/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0003/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0010/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0001/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0007/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0004/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0005/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0002/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0008/measurement.npy 5
+Zopiklon 2025-01-14/Zopiklon 2025-01-14/Group/M0009/measurement.npy 5
+Bromazolam 2025-01-20/Group/M0006/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0003/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0010/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0001/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0007/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0004/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0005/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0002/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0008/measurement.npy 0
+Bromazolam 2025-01-20/Group/M0009/measurement.npy 0

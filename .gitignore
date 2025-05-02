@@ -1,7 +1,5 @@
 .DS_Store
-data/
-data_original/
-data_processed/
+data*/
 sam2/.vscode/
 sam2/.DS_Store
 sam2/__pycache__/
@@ -14,3 +12,4 @@ sam2/outputs/*
 sam2/checkpoints/*.pt
 sam2/demo/backend/checkpoints/*.pt
 dump/
+hyper_checkpoints/

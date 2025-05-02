@@ -1,0 +1,47 @@
+Using GPU: NVIDIA GeForce RTX 3090
+Reading original label file ./data_processed_patch/labels_patches.txt to determine number of classes...
+Determined 6 classes from label file.
+Loading test set samples from: hyper_checkpoints/resnet/test_samples.txt
+Loaded 2000 samples for the test set.
+Creating test dataset instance...
+PreprocessedPatchDataset initialized. Using 2000 provided samples.
+Test dataset size: 2000 patches
+Creating Test DataLoader...
+/home/kge7/.conda/envs/hyperenv/lib/python3.13/site-packages/torch/utils/data/dataloader.py:624: UserWarning: This DataLoader will create 4 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
+  warnings.warn(
+Test DataLoader created.
+Loading model with 256 input channels and 6 classes...
+Restoring model weights from: hyper_checkpoints/resnet/model-49.pth
+Loading state dict into model encoder and decoder...
+Model loaded successfully.
+Starting evaluation...
+Evaluating: 100%|██████████████████████████████| 80/80 [08:54<00:00,  6.68s/it]
+Evaluation finished.
+
+--- Evaluation Results ---
+Accuracy: 1.0000
+
+Classification Report:
+              precision    recall  f1-score   support
+
+           0       1.00      1.00      1.00       200
+           1       1.00      1.00      1.00       200
+           2       1.00      1.00      1.00       600
+           3       1.00      1.00      1.00       200
+           4       1.00      1.00      1.00       600
+           5       1.00      1.00      1.00       200
+
+    accuracy                           1.00      2000
+   macro avg       1.00      1.00      1.00      2000
+weighted avg       1.00      1.00      1.00      2000
+
+
+Confusion Matrix:
+Labels: [np.int64(0), np.int64(1), np.int64(2), np.int64(3), np.int64(4), np.int64(5)]
+[[200   0   0   0   0   0]
+ [  0 200   0   0   0   0]
+ [  0   0 600   0   0   0]
+ [  0   0   0 200   0   0]
+ [  0   0   0   0 600   0]
+ [  0   0   0   0   0 200]]
+Confusion matrix plot saved to: hyper_checkpoints/resnet/confusion_matrix.png
