@@ -439,11 +439,11 @@ def main(args):
                     augmented_patch_np,
                     min_factor=args.scale_factor_range[0],
                     max_factor=args.scale_factor_range[1],
-                    start_band=args.scale_offset_start_band, # Use specific scale/offset range
-                    end_band=args.scale_offset_end_band
+                    start_band=TARGET_START_BAND, # Use specific scale/offset range
+                    end_band=TARGET_END_BAND
                 )
                 if abs(scale_factor - 1.0) > 1e-6:
-                    scale_range = f"[{args.scale_offset_start_band+1}:{args.scale_offset_end_band}]" if args.scale_offset_start_band is not None else "All"
+                    scale_range = f"[{TARGET_START_BAND+1}:{TARGET_END_BAND}]" if TARGET_START_BAND is not None else "All"
                     aug_desc_parts.append(f"S(x{scale_factor:.2f}, bands={scale_range})")
 
             # 3. Offset
@@ -452,11 +452,11 @@ def main(args):
                     augmented_patch_np,
                     min_offset=args.offset_range[0],
                     max_offset=args.offset_range[1],
-                    start_band=args.scale_offset_start_band, # Use specific scale/offset range
-                    end_band=args.scale_offset_end_band
+                    start_band=TARGET_START_BAND, # Use specific scale/offset range
+                    end_band=TARGET_END_BAND
                 )
                 if abs(offset_value) > 1e-6:
-                     offset_range = f"[{args.scale_offset_start_band+1}:{args.scale_offset_end_band}]" if args.scale_offset_start_band is not None else "All"
+                     offset_range = f"[{TARGET_START_BAND+1}:{TARGET_END_BAND}]" if TARGET_START_BAND is not None else "All"
                      aug_desc_parts.append(f"O({offset_value:+.3f}, bands={offset_range})")
 
             aug_desc = " + ".join(aug_desc_parts) if aug_desc_parts else "None"
