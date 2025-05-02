@@ -171,7 +171,8 @@ def add_gaussian_noise(patch, mean=0.0, std_dev=0.1, start_band=None, end_band=N
 
 # --- START: New HSI Augmentation Functions ---
 def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2, start_band=None, end_band=None):
-    """
+    def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2, start_band=None, end_band=None):
+        """
     Applies random intensity scaling to an HSI patch, optionally targeting specific bands.
 
     Args:
@@ -182,22 +183,25 @@ def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2, start_
         end_band (int, optional): End band index (exclusive).
 
     Returns:
-        np.ndarray: The patch with applied scaling.
+        Tuple[np.ndarray, float]: The patch with applied scaling and the scale factor used.
     """
     if patch is None or patch.size == 0:
-        return patch
+        return patch, 1.0 # Return original patch and factor 1.0
 
     scaled_patch = patch.copy() # Work on a copy
     scale_factor = random.uniform(min_factor, max_factor)
-    
+
     # Determine the slice to apply scaling
     if start_band is not None and end_band is not None:
-        if 0 <= start_band < end_band <= patch.shape[2]:
-            target_slice = scaled_patch[..., start_band:end_band]
-            target_slice *= scale_factor # Apply scaling only to the slice
-        else:
+        num_channels = patch.shape[2]
+        valid_start = max(0, start_band)
+        valid_end = min(num_channels, end_band)
+        if valid_start >= valid_end:
             print(f"Warning: Invalid band range [{start_band}:{end_band}] for scaling. Applying globally.")
             scaled_patch *= scale_factor # Apply globally if range is invalid
+        else:
+            target_slice = scaled_patch[..., valid_start:valid_end]
+            target_slice *= scale_factor # Apply scaling only to the slice
     else:
         scaled_patch *= scale_factor # Apply globally if range not specified
 
@@ -206,7 +210,7 @@ def apply_random_intensity_scaling(patch, min_factor=0.8, max_factor=1.2, start_
     if patch_min_original >= 0:
         scaled_patch = np.clip(scaled_patch, 0, None)
 
-    return scaled_patch
+    return scaled_patch, scale_factor # <-- Return both patch and factor
 
 def apply_random_intensity_offset(patch, min_offset=-0.05, max_offset=0.05, start_band=None, end_band=None):
     """
@@ -220,31 +224,33 @@ def apply_random_intensity_offset(patch, min_offset=-0.05, max_offset=0.05, star
         end_band (int, optional): End band index (exclusive).
 
     Returns:
-        np.ndarray: The patch with applied offset.
+        Tuple[np.ndarray, float]: The patch with applied offset and the offset value used.
     """
     if patch is None or patch.size == 0:
-        return patch
+        return patch, 0.0 # Return original patch and offset 0.0
 
     offset_patch = patch.copy() # Work on a copy
-    offset = random.uniform(min_offset, max_offset)
+    offset_value = random.uniform(min_offset, max_offset) # Renamed variable
 
     # Determine the slice to apply offset
     if start_band is not None and end_band is not None:
-        if 0 <= start_band < end_band <= patch.shape[2]:
-            target_slice = offset_patch[..., start_band:end_band]
-            target_slice += offset # Apply offset only to the slice
-        else:
+        num_channels = patch.shape[2]
+        valid_start = max(0, start_band)
+        valid_end = min(num_channels, end_band)
+        if valid_start >= valid_end:
             print(f"Warning: Invalid band range [{start_band}:{end_band}] for offset. Applying globally.")
-            offset_patch += offset # Apply globally if range is invalid
-    else:
-        offset_patch += offset # Apply globally if range not specified
+            offset_patch += offset_value # Apply globally if range is invalid
+        else:
+            target_slice = offset_patch[..., valid_start:valid_end]
+            target_slice += offset_value # Apply offset only to the slice
+    offset_patch += offset_value # Apply globally if range not specified
 
     # Clip values if original data was non-negative (apply globally after offset)
     patch_min_original = np.min(patch) if patch.size > 0 else 0
     if patch_min_original >= 0:
         offset_patch = np.clip(offset_patch, 0, None)
 
-    return offset_patch
+    return offset_patch, offset_value
 # --- END: New HSI Augmentation Functions ---
 
 
