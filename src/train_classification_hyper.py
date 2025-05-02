@@ -6,16 +6,12 @@ from torch.utils.data import DataLoader, Dataset # Keep Dataset import
 from torchvision import transforms
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split
+import collections # Import collections for defaultdict
 
 from classification_model import ClassificationModel
 from classification_cnn import train
-# --- Remove SAM2/Hydra specific imports ---
-# from sam2.build_sam import build_sam2
-# from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
-# import torch.multiprocessing as mp
-# import hydra
-# from omegaconf import OmegaConf, DictConfig
-# --- End Remove ---
+
+from pathlib import Path # Import Path
 
 import matplotlib.pyplot as plt
 # import matplotlib.patches as patches # No longer needed for bbox visualization here
@@ -68,6 +64,22 @@ parser.add_argument('--device',
     type=str, default='cuda', help='Device to use: gpu, cpu')
 
 args = parser.parse_args()
+
+# --- Helper Function to Extract Common Path ---
+def get_common_path_part(relative_path_str):
+    """
+    Extracts the common part (Drug/Group/Mxxx/patch_y.npy) from the full relative path.
+    Returns the common part string or None if the path structure is unexpected.
+    """
+    p = Path(relative_path_str)
+    parts = p.parts
+    if len(parts) >= 5:
+        if parts[0].lower() == 'real' and len(parts) == 5: # real/Drug/Group/Mxxx/patch.npy
+            return str(Path(*parts[1:])) # Drug/Group/Mxxx/patch.npy
+        elif parts[0].lower() == 'fake' and parts[1].lower() == 'patches_augmented' and len(parts) == 6: # fake/patches_augmented/Drug/Group/Mxxx/patch.npy
+            return str(Path(*parts[2:])) # Drug/Group/Mxxx/patch.npy
+    return None
+# --- End Helper Function ---
 
 
 if __name__ == '__main__':
@@ -130,36 +142,107 @@ if __name__ == '__main__':
     num_classes = len(class_labels)
     print(f"Found {len(all_patch_samples)} total patches belonging to {num_classes} classes.")
 
-    # --- Split the PATCHES into training and test sets ---
-    patch_paths = [s[0] for s in all_patch_samples]
-    patch_labels = [s[1] for s in all_patch_samples]
+    # # --- Split the PATCHES into training and test sets ---
+    # patch_paths = [s[0] for s in all_patch_samples]
+    # patch_labels = [s[1] for s in all_patch_samples]
+    
+    # --- START: New Splitting Logic ---
+    print("Identifying real sources, fakes, and unused real patches...")
+    real_source_map = {} # common_path -> (full_real_path, label)
+    fake_map = {}        # common_path -> (full_fake_path, label)
+    unused_real_list = [] # list of (full_real_path, label)
+    temp_real_map = {}   # common_path -> (full_real_path, label) - temporary holder
 
-    if args.train_split_ratio < 1.0 and args.train_split_ratio > 0.0:
-        train_paths, test_paths, train_labels, test_labels = train_test_split(
-            patch_paths, patch_labels,
-            train_size=args.train_split_ratio,
-            random_state=42, # Use a fixed random state for reproducibility
-            stratify=patch_labels # Stratify based on patch labels
-        )
-        train_samples = list(zip(train_paths, train_labels))
-        test_samples = list(zip(test_paths, test_labels)) # Store the test samples
-        print(f"Split data: {len(train_samples)} training patches, {len(test_samples)} test patches.")
+    for rel_path, label in all_patch_samples:
+        common_part = get_common_path_part(rel_path)
+        if common_part:
+            p = Path(rel_path)
+            if p.parts[0].lower() == 'real':
+                temp_real_map[common_part] = (rel_path, label)
+            elif p.parts[0].lower() == 'fake':
+                fake_map[common_part] = (rel_path, label)
+        # else: # Optional: Log paths that don't match expected structure
+        #     print(f"Warning: Path '{rel_path}' did not match expected real/ or fake/ structure.")
 
-        # --- SAVE THE TEST SET LIST ---
+    # Populate real_source_map and unused_real_list
+    for common_part, real_data in temp_real_map.items():
+        if common_part in fake_map:
+            real_source_map[common_part] = real_data
+        else:
+            unused_real_list.append(real_data)
+            
+    print(f"Identified {len(real_source_map)} real source patches.")
+    print(f"Identified {len(fake_map)} fake patches.")
+    print(f"Identified {len(unused_real_list)} unused real patches.")
+
+    # --- Split Paired Data (Groups A & B) ---
+    train_samples = []
+    test_samples = []
+    paired_keys = list(real_source_map.keys())
+
+    if paired_keys:
+        if args.train_split_ratio < 1.0 and args.train_split_ratio > 0.0:
+            print(f"Splitting {len(paired_keys)} source/fake pairs ({args.train_split_ratio*100:.1f}% train)...")
+            train_keys, test_keys = train_test_split(
+                paired_keys,
+                train_size=args.train_split_ratio,
+                random_state=42 # Use a fixed random state for reproducibility
+            )
+
+            for key in train_keys:
+                train_samples.append(real_source_map[key]) # Add real source
+                if key in fake_map:
+                    train_samples.append(fake_map[key]) # Add corresponding fake
+                else:
+                     print(f"Warning: Missing fake pair for train key {key}")
+
+
+            for key in test_keys:
+                test_samples.append(real_source_map[key]) # Add real source
+                if key in fake_map:
+                    test_samples.append(fake_map[key]) # Add corresponding fake
+                else:
+                    print(f"Warning: Missing fake pair for test key {key}")
+
+            print(f"Added {len(train_keys)*2} paired samples to train set (approx).")
+            print(f"Added {len(test_keys)*2} paired samples to test set (approx).")
+
+        else: # Use all paired data for training if ratio is 1.0
+            print(f"Using all {len(paired_keys)} source/fake pairs for training.")
+            for key in paired_keys:
+                train_samples.append(real_source_map[key])
+                if key in fake_map:
+                    train_samples.append(fake_map[key])
+                else:
+                    print(f"Warning: Missing fake pair for train key {key}")
+
+    else:
+        print("No source/fake pairs found to split.")
+        
+    
+
+    # --- Final Shuffle and Summary ---
+    random.seed(42) # Re-seed before final shuffle if desired
+    random.shuffle(train_samples)
+    random.shuffle(test_samples)
+
+    print("\n--- Final Split Summary ---")
+    print(f"Total training samples: {len(train_samples)}")
+    print(f"Total testing samples: {len(test_samples)}")
+
+    # --- Save the TEST set paths and labels ---
+    if test_samples:
         test_set_file_path = os.path.join(args.checkpoint_path, 'test_samples.txt')
-        print(f"Saving test set file list to: {test_set_file_path}")
+        print(f"Saving test set file list ({len(test_samples)} samples) to: {test_set_file_path}")
         try:
             with open(test_set_file_path, 'w') as f_test:
                 for path, label in test_samples:
-                    f_test.write(f"{path} {label}\n")
+                    f_test.write(f"{path} {label}\n") # Use original relative path
         except IOError as e:
             print(f"Error saving test set file list: {e}")
-        # --- END SAVE TEST SET ---
     else:
-        # Use all patches for training if ratio is 1.0 or more
-        train_samples = all_patch_samples
-        print(f"Using all {len(train_samples)} patches for training (train_split_ratio >= 1.0).")
-    # --- End Patch Splitting ---
+        print("Warning: No samples allocated to the test set.")
+    # --- END: New Splitting Logic ---
 
 
     print("Creating training dataset instance from preprocessed patches...")
