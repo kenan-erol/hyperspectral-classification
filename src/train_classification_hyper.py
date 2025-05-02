@@ -219,7 +219,10 @@ if __name__ == '__main__':
     else:
         print("No source/fake pairs found to split.")
         
-    
+    # --- FIX: Add unused real patches to the training set ---
+    print(f"Adding {len(unused_real_list)} unused real patches to the training set.")
+    train_samples.extend(unused_real_list)
+    # --- END FIX ---
 
     # --- Final Shuffle and Summary ---
     random.seed(42) # Re-seed before final shuffle if desired
