@@ -131,6 +131,16 @@ This workflow trains a model to distinguish between original ('real') hyperspect
       ```
     *   *Important:* Ensure your `data_real_fake` directory is correctly populated. The `augment_patches.py` script saves fakes to `data_real_fake/fake`. You might need to manually create `data_real_fake/real` and either copy or symlink the original patches from `data_processed_patch/patches` into it before running `prep_rf.sh`. The `prep_real_fake.py` script expects `real` and `fake` subdirectories.
 
+	The arguments used: 
+
+	noise std dev 0.05 scale factor range 0.9 1.1 offset range -0.05 0.05 for weak => guessed all real
+
+	0.25, 0.6 1.4, -0.2 0.2 strong, 98%
+
+	intermediate
+
+	mod bands 0-131 with weak + -0.2 0.2 bc ecstasy study
+
 4.  **Train the Real/Fake Classifier:**
     *   Run the appropriate training script, pointing to the `data_real_fake` directory and the binary label file.
     *   ```bash
