@@ -405,7 +405,7 @@ def main(args):
     #     print(f"Warning: --max_patches argument is ignored. Processing {len(selected_samples_for_processing)} selected samples (~50% stratified).")
 
     # Define the target band range (Python indices)
-    TARGET_START_BAND = 80  # Corresponds to 81st band
+    TARGET_START_BAND = 0  # Corresponds to 81st band
     TARGET_END_BAND = 131 # Corresponds to 131st band (exclusive)
 
     augmented_samples_list = [] # Store (rel_path, label) for the new label file
