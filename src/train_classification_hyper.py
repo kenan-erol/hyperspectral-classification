@@ -161,8 +161,8 @@ if __name__ == '__main__':
                 temp_real_map[common_part] = (rel_path, label)
             elif p.parts[0].lower() == 'fake':
                 fake_map[common_part] = (rel_path, label)
-        # else: # Optional: Log paths that don't match expected structure
-        #     print(f"Warning: Path '{rel_path}' did not match expected real/ or fake/ structure.")
+        else: # Optional: Log paths that don't match expected structure
+            print(f"Warning: Path '{rel_path}' did not match expected real/ or fake/ structure.")
 
     # Populate real_source_map and unused_real_list
     for common_part, real_data in temp_real_map.items():
@@ -219,9 +219,57 @@ if __name__ == '__main__':
     else:
         print("No source/fake pairs found to split.")
         
-    # --- FIX: Add unused real patches to the training set ---
-    print(f"Adding {len(unused_real_list)} unused real patches to the training set.")
-    train_samples.extend(unused_real_list)
+    # # --- FIX: Add unused real patches to the training set ---
+    # print(f"Adding {len(unused_real_list)} unused real patches to the training set.")
+    # train_samples.extend(unused_real_list)
+    # # --- END FIX ---
+    
+    if unused_real_list:
+        print(f"Processing {len(unused_real_list)} unused real patches...")
+        if 0.0 < args.train_split_ratio < 1.0:
+            # Extract paths and labels for potential stratification
+            unused_paths = [s[0] for s in unused_real_list]
+            unused_labels = [s[1] for s in unused_real_list]
+            try:
+                # Attempt stratification
+                unused_train_paths, unused_test_paths, unused_train_labels, unused_test_labels = train_test_split(
+                    unused_paths,
+                    unused_labels,
+                    train_size=args.train_split_ratio,
+                    random_state=42, # Use same random state as paired split
+                    stratify=unused_labels # Stratify by label if possible
+                )
+                # Re-zip into (path, label) tuples
+                unused_train_samples = list(zip(unused_train_paths, unused_train_labels))
+                unused_test_samples = list(zip(unused_test_paths, unused_test_labels))
+
+                print(f"Adding {len(unused_train_samples)} unused real patches to the training set.")
+                train_samples.extend(unused_train_samples)
+                print(f"Adding {len(unused_test_samples)} unused real patches to the test set.")
+                test_samples.extend(unused_test_samples)
+
+            except ValueError as e:
+                 # Handle stratification error (e.g., if a class has only 1 sample in unused_real_list)
+                 print(f"Warning: Stratification failed for unused real patches ({e}). Splitting without stratification.")
+                 # Split the list of tuples directly without stratification
+                 unused_train_samples, unused_test_samples = train_test_split(
+                     unused_real_list,
+                     train_size=args.train_split_ratio,
+                     random_state=42
+                 )
+                 print(f"Adding {len(unused_train_samples)} unused real patches to the training set.")
+                 train_samples.extend(unused_train_samples)
+                 print(f"Adding {len(unused_test_samples)} unused real patches to the test set.")
+                 test_samples.extend(unused_test_samples)
+
+        elif args.train_split_ratio >= 1.0: # Handle case where ratio is 1.0 or more
+            print(f"Adding all {len(unused_real_list)} unused real patches to the training set.")
+            train_samples.extend(unused_real_list)
+        else: # Handle case where ratio is 0.0 or less (all go to test)
+            print(f"Adding all {len(unused_real_list)} unused real patches to the test set.")
+            test_samples.extend(unused_real_list)
+    else:
+        print("No unused real patches to add.")
     # --- END FIX ---
 
     # --- Final Shuffle and Summary ---
