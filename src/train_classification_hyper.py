@@ -73,12 +73,18 @@ def get_common_path_part(relative_path_str):
     """
     p = Path(relative_path_str)
     parts = p.parts
-    if len(parts) >= 5:
-        if parts[0].lower() == 'real' and len(parts) == 5: # real/Drug/Group/Mxxx/patch.npy
-            return str(Path(*parts[1:])) # Drug/Group/Mxxx/patch.npy
-        elif parts[0].lower() == 'fake' and parts[1].lower() == 'patches_augmented' and len(parts) == 6: # fake/patches_augmented/Drug/Group/Mxxx/patch.npy
-            return str(Path(*parts[2:])) # Drug/Group/Mxxx/patch.npy
-    return None
+    # Check if path starts correctly and has enough parts for the identifier
+    if parts[0].lower() == 'real' and len(parts) >= 5:
+        # For 'real/' paths, take the last 4 parts as the identifier
+        # This works for both 5 parts (real/D/G/M/p.npy) and 6+ parts (real/D/D/G/M/p.npy)
+        return str(Path(*parts[-4:]))
+    elif parts[0].lower() == 'fake' and len(parts) >= 6 and parts[1].lower() == 'patches_augmented':
+        # For 'fake/patches_augmented/' paths, also take the last 4 parts
+        # This works for 6 parts (fake/pa/D/G/M/p.npy) and potentially more
+        return str(Path(*parts[-4:]))
+    else:
+        # If it doesn't start as expected or is too short, return None
+        return None
 # --- End Helper Function ---
 
 
