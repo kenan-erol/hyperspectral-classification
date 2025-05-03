@@ -3,11 +3,11 @@
 export CUDA_VISIBLE_DEVICES=0
 
 python src/run_classification_hyper.py \
-  --n_batch 25 \
+  --n_batch 128 \
   --data_dir './data_real_fake' \
-  --label_file './labels_real_fake2.txt' \
+  --label_file './labels_real_fake3.txt' \
   --patch_size 224 \
   --encoder_type 'resnet18' \
   --num_channels 256 \
-  --checkpoint_path 'hyper_checkpoints/resnet_rf/model-20.pth' \
+  --checkpoint_path 'hyper_checkpoints/resnet_rf/model-9.pth' \
   --device 'cuda'
