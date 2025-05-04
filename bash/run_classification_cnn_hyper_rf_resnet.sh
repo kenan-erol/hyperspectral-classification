@@ -9,5 +9,5 @@ python src/run_classification_hyper.py \
   --patch_size 224 \
   --encoder_type 'resnet18' \
   --num_channels 256 \
-  --checkpoint_path 'hyper_checkpoints/resnet_rf/model-9.pth' \
+  --checkpoint_path 'hyper_checkpoints/resnet_rf/model-33.pth' \
   --device 'cuda'
