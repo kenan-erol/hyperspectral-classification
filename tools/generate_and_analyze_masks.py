@@ -1,4 +1,3 @@
-# analyze_mask_areas.py
 import os
 import numpy as np
 import torch
@@ -6,23 +5,19 @@ import matplotlib.pyplot as plt
 from PIL import Image
 import hydra
 from omegaconf import OmegaConf
-
-# Assuming sam2 package is installed or accessible
 from sam2.build_sam import build_sam2, _load_checkpoint
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
-# --- Configuration (Adjust these paths/names) ---
-SAM2_CHECKPOINT = "./sam2/checkpoints/sam2.1_hiera_base_plus.pt" # Or your checkpoint
-MODEL_CFG_REL = "sam2.1/sam2.1_hiera_b+" # Relative config name used in training
-CONFIG_DIR_ABS = os.path.abspath("./sam2/sam2/configs") # Absolute path to sam2 configs dir
-DATA_DIR = "./data_processed/" # Path to your .npy files
-LABEL_FILE = "labels.txt" # Path to your labels file
+SAM2_CHECKPOINT = "./sam2/checkpoints/sam2.1_hiera_base_plus.pt"
+MODEL_CFG_REL = "sam2.1/sam2.1_hiera_b+"
+CONFIG_DIR_ABS = os.path.abspath("./sam2/sam2/configs")
+DATA_DIR = "./data_processed/" # Path to patch .npy files
+LABEL_FILE = "labels.txt" # Path to patch labels file
 NUM_IMAGES_TO_ANALYZE = 20
 OUTPUT_VIS_DIR = "./mask_analysis_vis"
-# --- End Configuration ---
+# --- End Configuration --- can make these cli args later
 
 def hsi_to_rgb_display(hsi_image):
-    # Helper to convert HSI to displayable RGB (same as in datasets.py)
     if hsi_image.ndim == 2: hsi_image = np.expand_dims(hsi_image, axis=-1)
     img_h, img_w, img_c = hsi_image.shape
     if img_c == 0: return np.zeros((img_h, img_w, 3), dtype=np.uint8)
@@ -35,17 +30,15 @@ def hsi_to_rgb_display(hsi_image):
     return np.stack([display_img]*3, axis=-1)
 
 def show_anns_with_area(anns, ax):
-    # Modified show_anns to display area
     if not anns: return
     sorted_anns = sorted(anns, key=(lambda x: x['area']), reverse=True)
     ax.set_autoscale_on(False)
     img_overlay = np.ones((sorted_anns[0]['segmentation'].shape[0], sorted_anns[0]['segmentation'].shape[1], 4))
-    img_overlay[:,:,3] = 0 # Transparent background
+    img_overlay[:,:,3] = 0
     for ann in sorted_anns:
         m = ann['segmentation']
-        color_mask = np.concatenate([np.random.random(3), [0.35]]) # Semi-transparent
+        color_mask = np.concatenate([np.random.random(3), [0.35]])
         img_overlay[m] = color_mask
-        # Add area text
         y, x = np.where(m)
         if len(x) > 0 and len(y) > 0:
              center_x, center_y = np.mean(x), np.mean(y)
@@ -98,10 +91,9 @@ if __name__ == "__main__":
         with open(LABEL_FILE, 'r') as f:
             for i, line in enumerate(f): # Add line number
                 line = line.strip()
-                if not line: continue # Skip empty lines
+                if not line: continue
 
                 try:
-                    # --- Use robust splitting logic ---
                     last_space_idx = line.rfind(' ')
                     if last_space_idx == -1:
                         raise ValueError("No space found to separate path and label.")
@@ -111,12 +103,6 @@ if __name__ == "__main__":
 
                     if not relative_path or not label_str:
                         raise ValueError("Empty path or label after split.")
-                    # --- End robust splitting logic ---
-
-                    # Optional: Check if label is numeric if needed, but we only need the path here
-                    # label = int(label_str)
-
-                    # We only need the path for analysis
                     image_paths.append(relative_path)
                     # print(f"  Line {i+1}: Found path '{relative_path}'") # Optional debug print
 
@@ -133,9 +119,8 @@ if __name__ == "__main__":
     if not image_paths:
         print("Error: No image paths found in label file.")
         exit(1)
-
-    # Select a subset
-    image_paths = list(set(image_paths)) # Get unique image paths
+    
+    image_paths = list(set(image_paths))
     if len(image_paths) > NUM_IMAGES_TO_ANALYZE:
         import random
         image_paths = random.sample(image_paths, NUM_IMAGES_TO_ANALYZE)
@@ -173,12 +158,9 @@ if __name__ == "__main__":
             areas = [m['area'] for m in masks_data]
             all_areas.extend(areas)
             print(f"  Generated {len(masks_data)} masks. Areas: {sorted(areas)}")
-
-            # --- Modify Filename Generation ---
-            # Create a unique base name from the relative path
-            base_name_from_path = os.path.splitext(rel_path)[0].replace(os.sep, '_') # Replace '/' or '\' with '_'
+            
+            base_name_from_path = os.path.splitext(rel_path)[0].replace(os.sep, '_')
             vis_filename = os.path.join(OUTPUT_VIS_DIR, f"{base_name_from_path}_masks.png")
-            # --- End Modify Filename Generation ---
 
 
             # Save visualization
@@ -187,7 +169,6 @@ if __name__ == "__main__":
             show_anns_with_area(masks_data, plt.gca())
             plt.title(f"{os.path.basename(rel_path)}\n{len(masks_data)} masks generated")
             plt.axis('off')
-            # Use the new unique filename
             plt.savefig(vis_filename, bbox_inches='tight')
             plt.close()
             # print(f"  Visualization saved to: {vis_filename}") # Optional: uncomment to confirm save path

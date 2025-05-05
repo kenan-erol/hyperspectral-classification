@@ -12,9 +12,9 @@ from classification_cnn import train
 from sam2.build_sam import build_sam2, _load_checkpoint
 from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 
-import hydra # Add hydra import
+import hydra
 import hydra.utils
-from omegaconf import OmegaConf, DictConfig # Add OmegaConf import
+from omegaconf import OmegaConf, DictConfig
 
 from log_utils import hsi_to_rgb_display
 import matplotlib.pyplot as plt
@@ -30,31 +30,28 @@ MAX_PILL_AREA = 170
 MIN_IOU_SCORE = 0.5
 
 TARGET_MASK_COUNT = 100
-MIN_MASKS_FOR_ADJUSTMENT = 51 # More than 50
+MIN_MASKS_FOR_ADJUSTMENT = 51
 
 class HyperspectralPatchDataset(Dataset):
     def __init__(self,
                  data_dir,
                  samples,
                  sam2_checkpoint_path,
-                 sam2_model_config: DictConfig, # Keep original name based on previous discussion
+                 sam2_model_config: DictConfig,
                  device,
                  num_patches_per_image=5,
-                 # --- Accept transform parameters ---
                  transform_mean=None, # e.g., [0.5, 0.5, ...]
                  transform_std=None,  # e.g., [0.5, 0.5, ...]
-                 num_channels=0,      # Needed for mean/std list creation
-                 # --- End transform parameters ---
+                 num_channels=0,
                  target_size=(224, 224)):
         self.data_dir = data_dir
         self.original_samples = samples
         self.samples_for_iteration = self._expand_samples(samples, num_patches_per_image)
         self.sam2_checkpoint_path = sam2_checkpoint_path
-        self.sam2_model_config = sam2_model_config # Store the config object
-        self.device = device # Store device string (e.g., 'cuda')
+        self.sam2_model_config = sam2_model_config
+        self.device = device
         self._worker_sam2_model = None
         self.num_patches_per_image = num_patches_per_image
-        # Store transform parameters
         self.transform_mean = transform_mean
         self.transform_std = transform_std
         self.num_channels = num_channels
@@ -104,11 +101,8 @@ class HyperspectralPatchDataset(Dataset):
         worker_pid = os.getpid() # Get worker PID for logging
         print(f"Initializing SAM2 in worker {worker_pid}...")
         try:
-            # --- Use the specific model config ---
-            # No need to check for 'model' key here, as we assume sam2_model_config IS the model part
             print(f"Instantiating model defined by: {self.sam2_model_config.get('_target_', 'N/A')}")
-            sam2_model = hydra.utils.instantiate(self.sam2_model_config) # Use the passed model config directly
-            # --- End config change ---
+            sam2_model = hydra.utils.instantiate(self.sam2_model_config)
 
             if self.sam2_checkpoint_path:
                 print(f"Loading checkpoint into model: {self.sam2_checkpoint_path}")
@@ -322,34 +316,32 @@ class PreprocessedPatchDataset(Dataset):
     The relative path should be relative to the data_dir provided.
     """
     def __init__(self,
-                 data_dir,      # Base directory where patches are saved (e.g., './data_processed_patch/')
-                 samples,       # List of (relative_patch_path, label) tuples
-                 num_channels=0, # Needed for transform
-                 save_visualization_path=None, # e.g., 'hyper_checkpoints/resnet/visualizations/'
-                 num_visualizations_to_save=0,   # How many initial samples to visualize
+                 data_dir,
+                 samples,
+                 num_channels=0,
+                 save_visualization_path=None,
+                 num_visualizations_to_save=0,
                  transform_mean=None,
                  transform_std=None,
                  target_size=(224, 224)): # Ensure patches are resized if needed
         self.data_dir = data_dir
-        self.samples = samples # Use the provided list directly
+        self.samples = samples
         self.num_channels = num_channels
         self.transform_mean = transform_mean
         self.transform_std = transform_std
         self.target_size = target_size
         self.transform = self._create_transform()
         
-        # --- Store Visualization Params ---
+        
         self.save_visualization_path = save_visualization_path
         self.num_visualizations_to_save = num_visualizations_to_save
         if self.save_visualization_path:
-            os.makedirs(self.save_visualization_path, exist_ok=True) # Create dir if needed
-        # --- End Store Visualization Params ---
+            os.makedirs(self.save_visualization_path, exist_ok=True)
         
         if not self.samples:
              print("Warning: PreprocessedPatchDataset initialized with zero samples.")
         else:
              print(f"PreprocessedPatchDataset initialized. Using {len(self.samples)} provided samples.")
-             # Optional: Check if the first sample file exists
              first_rel_path, _ = self.samples[0]
              first_full_path = os.path.join(self.data_dir, first_rel_path)
              if not os.path.exists(first_full_path):
@@ -365,7 +357,7 @@ class PreprocessedPatchDataset(Dataset):
                 transforms.Normalize(mean=mean, std=std),
                 transforms.RandomHorizontalFlip(p=0.5),
                 transforms.RandomVerticalFlip(p=0.5),
-                # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2)
+                # transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2) cant do it bc not rgb
                 RandomIntensityScale(min_factor=0.8, max_factor=1.2)
             ])
         return None
@@ -382,13 +374,11 @@ class PreprocessedPatchDataset(Dataset):
         full_patch_path = os.path.join(self.data_dir, relative_path)
 
         try:
-            # Load the .npy patch file
             patch_np = np.load(full_patch_path) # Should be HWC, float32
 
             # Ensure correct format (HWC -> CHW tensor)
             if patch_np.ndim == 2: # Handle potential grayscale if needed
                 patch_np = np.expand_dims(patch_np, axis=-1)
-            # patch_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
             
             original_tensor = torch.from_numpy(patch_np.transpose((2, 0, 1))).float() # CHW
 
@@ -409,7 +399,7 @@ class PreprocessedPatchDataset(Dataset):
                     original_rgb_for_viz = hsi_to_rgb_display(original_np_hwc_viz)
                 except Exception as viz_e:
                     print(f"Warning: Failed to create original RGB for visualization (idx {idx}): {viz_e}")
-                    save_this_sample = False # Don't save if original fails
+                    save_this_sample = False
             # --- End Prepare Original ---
 
             # Resize tensor before applying transforms if needed
@@ -421,14 +411,14 @@ class PreprocessedPatchDataset(Dataset):
                      align_corners=False
                  ).squeeze(0)
             else:
-                 patch_tensor = original_tensor # Use original if already correct size
+                 patch_tensor = original_tensor
 
             # Apply normalization and augmentation transforms
-            transformed_tensor = patch_tensor # Start with the (potentially resized) tensor
+            transformed_tensor = patch_tensor
             if self.transform:
-                transformed_tensor = self.transform(transformed_tensor.clone()) # Use clone if transforms modify inplace
+                transformed_tensor = self.transform(transformed_tensor.clone())
 
-            # --- Save Visualization (if requested and original viz worked) ---
+            # --- Save Visualization ---
             if save_this_sample:
                 try:
                     # Convert transformed tensor back to HWC numpy for display
@@ -446,43 +436,35 @@ class PreprocessedPatchDataset(Dataset):
                     axes[1].axis('off')
                     
                     plt.tight_layout()
-                    # Construct filename
                     base_filename = os.path.splitext(os.path.basename(relative_path))[0]
                     save_filename = f"viz_{idx}_{base_filename}.png"
                     full_save_path = os.path.join(self.save_visualization_path, save_filename)
                     plt.savefig(full_save_path)
-                    plt.close(fig) # Close figure to free memory
+                    plt.close(fig)
                     # print(f"Saved visualization for index {idx} to {full_save_path}") # Optional log
                 except Exception as viz_e:
                     print(f"Warning: Failed to save visualization for index {idx}: {viz_e}")
-                    if 'fig' in locals() and plt.fignum_exists(fig.number): # Attempt to close figure on error
+                    if 'fig' in locals() and plt.fignum_exists(fig.number):
                          plt.close(fig)
             # --- End Save Visualization ---
-
-            # Return the transformed tensor for training/evaluation
+            
             return transformed_tensor, label
 
         except FileNotFoundError:
-            # More specific error for file not found
             print(f"Error: Patch file not found at {full_patch_path}. Index: {idx}")
-            return None, None # Return None for both tensor and label
+            return None, None
         except Exception as e:
             # General error during loading or processing
             print(f"Error loading or processing patch {full_patch_path} at index {idx}: {e}")
-            # Optionally print traceback for more detail:
             import traceback
             traceback.print_exc()
-            return None, None # Return None for both tensor and label
+            return None, None
 
 def collate_fn_skip_none_preprocessed(batch):
     """Collate function that filters out items where the patch tensor is None."""
-    # Filter out samples where the first element (the tensor) is None
     batch = [item for item in batch if item[0] is not None]
     if not batch:
-        # Return empty tensors or raise an error if the whole batch failed
-        # Returning empty tensors might be safer for the training loop
-        return torch.tensor([]), torch.tensor([]) # Match expected output structure (tensors, labels)
-    # Use default collate for the filtered batch
+        return torch.tensor([]), torch.tensor([])
     return torch.utils.data.dataloader.default_collate(batch)
 
 class RandomIntensityScale:
