@@ -1,7 +1,7 @@
 fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_0.npy 0
 fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_10.npy 0
 fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_11.npy 0
-fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_14.npy 0
+fake/Broazolam 2025-01-20/Group/M0001/measurement_patch_14.npy 0
 fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_15.npy 0
 fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_16.npy 0
 fake/Bromazolam 2025-01-20/Group/M0001/measurement_patch_17.npy 0
