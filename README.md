@@ -1,7 +1,9 @@
 # CPSC 290: Hyperspectral Image Classification for Drug Identification
 
 **Student:** Kenan Erol
+
 **Advisor:** Professor Alex Wong, Department of Computer Science
+
 **Director of Undergraduate Studies (DUS):** Professor Theodore Kim
 
 ## Project Abstract
