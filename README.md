@@ -138,8 +138,6 @@ This workflow trains a model to distinguish between original ('real') hyperspect
 *   ```bash
 	bash bash/augment_patch.sh
 	```
-*   *(Note on Bands 81-131 in `augment_patch.sh` example):* **[You need to explain WHY these specific bands were chosen for augmentation. Was it based on prior knowledge, specific spectral features of interest, or an arbitrary choice? E.g., "Bands 81-131 were targeted for augmentation as they correspond to a spectral region known to be sensitive to chemical composition variations for these specific drugs."]**
-*   (Optional) Run `bash bash/compare_rf.sh` (adjust paths inside the script) to visually compare a specific real patch and its generated fake counterpart, including spectral plots.
 
 3.  **Prepare Binary Labels:**
 *   Run the label preparation script. This script scans the `data_real_fake/` directory (containing both real and fake patches - note: the 'real' data might be symlinked or copied here depending on your setup) and creates `labels_real_fake.txt` with binary labels (1 for real, 0 for fake).
@@ -147,16 +145,6 @@ This workflow trains a model to distinguish between original ('real') hyperspect
 	bash bash/prep_rf.sh
 	```
 *   *Important:* Ensure your `data_real_fake` directory is correctly populated. The `augment_patches.py` script saves fakes to `data_real_fake/fake`. You might need to manually create `data_real_fake/real` and either copy or symlink the original patches from `data_processed_patch/patches` into it before running `prep_rf.sh`. The `prep_real_fake.py` script expects `real` and `fake` subdirectories.
-
-	The arguments used: 
-
-	noise std dev 0.05 scale factor range 0.9 1.1 offset range -0.05 0.05 for weak => guessed all real
-
-	0.25, 0.6 1.4, -0.2 0.2 strong, 98%
-
-	intermediate
-
-	mod bands 0-131 with weak + -0.2 0.2 bc ecstasy study
 
 4.  **Train the Real/Fake Classifier:**
 *   Run the appropriate training script, pointing to the `data_real_fake` directory and the binary label file.
@@ -177,7 +165,7 @@ This workflow trains a model to distinguish between original ('real') hyperspect
 
 ## Acknowledgements
 
-I would like to express my sincere gratitude to my advisor, Professor Alex Wong, for his guidance, support, and valuable insights throughout this project. I also thank Dr. Jolene Bressi and Ian Martin from the Yale School of Public Health and Professor Simon Dunne from the Swedish National Forensic Centre for providing the HSI dataset crucial for this work. I thank Professor Holly Rushmeier for her insights into using HSI data more effectively. This research utilized the Segment Anything Model 2 (SAM2) developed by Meta AI \cite{ravi2024sam2}. Computational resources were provided by the Yale Grace cluster. This project was undertaken as part of the CPSC 290 Directed Research course at Yale University under the supervision of the Director of Undergraduate Studies, Professor Theodore Kim.
+I would like to express my sincere gratitude to my advisor, Professor Alex Wong, for his guidance, support, and valuable insights throughout this project. I also thank Dr. Jolene Bressi and Ian Martin from the Yale School of Public Health and Professor Simon Dunne from the Swedish National Forensic Centre for providing the HSI dataset crucial for this work. I thank Professor Holly Rushmeier for her insights into using HSI data more effectively. This research utilized the Segment Anything Model 2 (SAM2) developed by Meta AI. Computational resources were provided by the Yale Grace cluster. This project was undertaken as part of the CPSC 290 Directed Research course at Yale University under the supervision of the Director of Undergraduate Studies, Professor Theodore Kim.
 
 ## Code and Data Availability
 
